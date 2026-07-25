@@ -1,4 +1,8 @@
 node_modules/
 dist/
+bin/
+*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts
 *.log
 .DS_Store
