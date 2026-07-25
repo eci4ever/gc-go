@@ -1,0 +1,16 @@
+{
+  "name": "gc-go",
+  "private": true,
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "cd api && go run .",
+    "dev:web": "npm --workspace web run dev",
+    "build": "npm --workspace web run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

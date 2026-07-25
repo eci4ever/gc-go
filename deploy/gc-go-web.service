@@ -1,0 +1,16 @@
+[Unit]
+Description=GC Go Vite Web
+After=network.target gc-go-api.service
+Wants=gc-go-api.service
+
+[Service]
+Type=simple
+User=nmfairus
+WorkingDirectory=/home/nmfairus/gc-go
+Environment=PATH=/home/nmfairus/.local/share/pi-node/current/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/nmfairus/.local/share/pi-node/current/bin/npm --workspace web run dev
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
