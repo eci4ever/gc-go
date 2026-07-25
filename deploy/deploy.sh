@@ -6,6 +6,9 @@ readonly repo_dir="/home/nmfairus/gc-go"
 readonly web_root="/var/www/gc-go"
 readonly api_binary="$repo_dir/bin/api"
 readonly api_candidate="$repo_dir/bin/api.new"
+readonly node_bin="/home/nmfairus/.local/share/pi-node/current/bin"
+
+export PATH="$node_bin:/usr/local/bin:/usr/bin:/bin"
 
 if [[ ! "$commit_sha" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Usage: $0 <40-character-commit-sha>" >&2
