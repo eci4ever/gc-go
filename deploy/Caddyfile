@@ -1,3 +1,13 @@
 vms.nimfi.dev {
-	reverse_proxy 127.0.0.1:5173
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	handle {
+		root * /var/www/gc-go
+		try_files {path} /index.html
+		file_server
+	}
 }
