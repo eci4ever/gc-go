@@ -26,3 +26,9 @@ sudo cp -a web/dist/. /var/www/gc-go/
 
 The included Caddyfile serves the static web build and proxies `/api/*` to
 Fiber on `127.0.0.1:3000`.
+
+## Continuous deployment
+
+Pushes to `main` run `.github/workflows/deploy.yml`. GitHub Actions connects
+to the VPS with a dedicated SSH key and runs `deploy/deploy.sh` for the exact
+commit that triggered the workflow.
