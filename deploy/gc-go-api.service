@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 User=nmfairus
 WorkingDirectory=/home/nmfairus/gc-go/api
+EnvironmentFile=/home/nmfairus/gc-go/api/.env
 ExecStart=/home/nmfairus/gc-go/bin/api
 Restart=on-failure
 RestartSec=3

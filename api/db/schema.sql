@@ -1,0 +1,1 @@
+-- Add application tables here as the domain model is defined.
