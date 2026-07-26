@@ -13,6 +13,7 @@ import {
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { SiteHeader } from '@/components/site-header'
 import {
   Card,
   CardAction,
@@ -54,7 +55,9 @@ function Home() {
   const latency = health.data?.db_latency_ms
 
   return (
-    <main className="py-10 sm:py-14">
+    <div className="min-h-screen bg-background text-foreground">
+      <SiteHeader />
+      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
       <section className="grid items-center gap-8 lg:grid-cols-[1fr_18rem]">
         <div className="max-w-2xl">
           <Badge
@@ -74,14 +77,18 @@ function Home() {
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <Button
               size="lg"
-              render={<Link to="/about" />}
+              render={<Link to="/signup" />}
             >
-              Explore the stack
+              Create an account
               <ArrowRight data-icon="inline-end" />
             </Button>
-            <span className="text-xs text-muted-foreground">
-              Refreshes automatically every 30 seconds
-            </span>
+            <Button
+              variant="outline"
+              size="lg"
+              render={<Link to="/login" />}
+            >
+              Log in
+            </Button>
           </div>
         </div>
 
@@ -245,13 +252,26 @@ function Home() {
                 : 'The next check will run automatically'}
             </p>
           </div>
-          <Badge variant="secondary" className="ml-auto max-sm:hidden">
-            <RefreshCw data-icon="inline-start" />
-            30s interval
-          </Badge>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Refresh system status"
+              title="Refresh system status"
+              disabled={health.isFetching}
+              onClick={() => void health.refetch()}
+            >
+              <RefreshCw className={cn(health.isFetching && 'animate-spin')} />
+            </Button>
+            <Badge variant="secondary" className="max-sm:hidden">
+              30s interval
+            </Badge>
+          </div>
         </CardFooter>
       </Card>
-    </main>
+      </main>
+    </div>
   )
 }
 

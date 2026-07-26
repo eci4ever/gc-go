@@ -10,6 +10,7 @@ import {
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { SiteHeader } from '@/components/site-header'
 import {
   Card,
   CardAction,
@@ -53,7 +54,9 @@ const stack = [
 
 function About() {
   return (
-    <main className="py-10 sm:py-14">
+    <div className="min-h-screen bg-background text-foreground">
+      <SiteHeader />
+      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
       <section className="max-w-2xl">
         <Badge variant="outline">
           <Layers3 data-icon="inline-start" />
@@ -127,6 +130,7 @@ function About() {
           </Button>
         </CardContent>
       </Card>
-    </main>
+      </main>
+    </div>
   )
 }
