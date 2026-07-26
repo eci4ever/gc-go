@@ -61,6 +61,11 @@ export type ChangePasswordInput = {
   newPassword: string
 }
 
+export type ResetPasswordInput = {
+  token: string
+  newPassword: string
+}
+
 export class AuthError extends Error {
   constructor(message: string) {
     super(message)
@@ -168,6 +173,20 @@ export function verifyEmail(token: string) {
   return emptyRequest('/api/auth/email-verification/verify', {
     method: 'POST',
     body: JSON.stringify({ token }),
+  })
+}
+
+export function forgotPassword(email: string) {
+  return emptyRequest('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function resetPassword(input: ResetPasswordInput) {
+  return emptyRequest('/api/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify(input),
   })
 }
 

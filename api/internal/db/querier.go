@@ -18,6 +18,7 @@ type Querier interface {
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTwoFactorChallenge(ctx context.Context, arg CreateTwoFactorChallengeParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DeleteAllUserSessions(ctx context.Context, userID string) error
 	DeleteEmailVerification(ctx context.Context, id string) error
 	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
 	DeleteSession(ctx context.Context, token string) error
@@ -26,8 +27,10 @@ type Querier interface {
 	DeleteUserEmailVerifications(ctx context.Context, identifier string) error
 	EnableTwoFactor(ctx context.Context, arg EnableTwoFactorParams) error
 	GetActiveEmailVerification(ctx context.Context, value string) (GetActiveEmailVerificationRow, error)
+	GetActivePasswordReset(ctx context.Context, value string) (GetActivePasswordResetRow, error)
 	GetCredentialPasswordByUserID(ctx context.Context, userID string) (pgtype.Text, error)
 	GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error)
+	GetPasswordResetUserByEmail(ctx context.Context, lower string) (GetPasswordResetUserByEmailRow, error)
 	GetRecentEmailVerification(ctx context.Context, identifier string) (pgtype.Timestamp, error)
 	GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error)
 	GetTwoFactorByUserID(ctx context.Context, userID string) (TwoFactor, error)

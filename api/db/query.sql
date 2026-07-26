@@ -59,6 +59,39 @@ WHERE id = $1;
 DELETE FROM verifications
 WHERE id = $1;
 
+-- name: GetPasswordResetUserByEmail :one
+SELECT
+    users.id,
+    users.name,
+    users.email
+FROM users
+JOIN accounts
+    ON accounts.user_id = users.id
+   AND accounts.provider_id = 'credential'
+WHERE lower(users.email) = lower($1)
+  AND coalesce(users.banned, FALSE) = FALSE
+LIMIT 1;
+
+-- name: GetActivePasswordReset :one
+SELECT
+    verifications.id,
+    users.id AS user_id,
+    accounts.password
+FROM verifications
+JOIN users ON lower(users.email) = lower(verifications.identifier)
+JOIN accounts
+    ON accounts.user_id = users.id
+   AND accounts.provider_id = 'credential'
+WHERE verifications.value = $1
+  AND verifications.expires_at > (now() AT TIME ZONE 'UTC')
+  AND coalesce(users.banned, FALSE) = FALSE
+LIMIT 1
+FOR UPDATE;
+
+-- name: DeleteAllUserSessions :exec
+DELETE FROM sessions
+WHERE user_id = $1;
+
 -- name: CreateCredentialAccount :exec
 INSERT INTO accounts (
     id,

@@ -6,9 +6,11 @@ import {
   changePassword,
   disableTwoFactor,
   enableTwoFactor,
+  forgotPassword,
   login,
   revokeOtherSessions,
   revokeSession,
+  resetPassword,
   sendEmailVerification,
   setupTwoFactor,
   verifyTwoFactorLogin,
@@ -165,5 +167,35 @@ describe('auth API client', () => {
     await verifyEmail('verification-token')
 
     expect(requests).toEqual(['send', 'verify:verification-token'])
+  })
+
+  it('supports requesting and completing a password reset', async () => {
+    const requests: string[] = []
+    server.use(
+      http.post('/api/auth/forgot-password', async ({ request }) => {
+        const body = (await request.json()) as { email: string }
+        requests.push(`forgot:${body.email}`)
+        return new HttpResponse(null, { status: 204 })
+      }),
+      http.post('/api/auth/reset-password', async ({ request }) => {
+        const body = (await request.json()) as {
+          token: string
+          newPassword: string
+        }
+        requests.push(`reset:${body.token}:${body.newPassword}`)
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+
+    await forgotPassword('test@example.com')
+    await resetPassword({
+      token: 'reset-token',
+      newPassword: 'new-password',
+    })
+
+    expect(requests).toEqual([
+      'forgot:test@example.com',
+      'reset:reset-token:new-password',
+    ])
   })
 })

@@ -36,6 +36,12 @@ type VerificationEmailSender interface {
 		name string,
 		verificationURL string,
 	) error
+	SendPasswordReset(
+		ctx context.Context,
+		to string,
+		name string,
+		resetURL string,
+	) error
 }
 
 type Handler struct {
@@ -126,6 +132,8 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Post("/2fa/verify-login", h.verifyTwoFactorLogin)
 	router.Post("/email-verification", h.sendEmailVerification)
 	router.Post("/email-verification/verify", h.verifyEmail)
+	router.Post("/forgot-password", h.forgotPassword)
+	router.Post("/reset-password", h.resetPassword)
 }
 
 func (h *Handler) signup(c fiber.Ctx) error {

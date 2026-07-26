@@ -247,6 +247,16 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const deleteAllUserSessions = `-- name: DeleteAllUserSessions :exec
+DELETE FROM sessions
+WHERE user_id = $1
+`
+
+func (q *Queries) DeleteAllUserSessions(ctx context.Context, userID string) error {
+	_, err := q.db.Exec(ctx, deleteAllUserSessions, userID)
+	return err
+}
+
 const deleteEmailVerification = `-- name: DeleteEmailVerification :exec
 DELETE FROM verifications
 WHERE id = $1
@@ -356,6 +366,36 @@ func (q *Queries) GetActiveEmailVerification(ctx context.Context, value string) 
 	return i, err
 }
 
+const getActivePasswordReset = `-- name: GetActivePasswordReset :one
+SELECT
+    verifications.id,
+    users.id AS user_id,
+    accounts.password
+FROM verifications
+JOIN users ON lower(users.email) = lower(verifications.identifier)
+JOIN accounts
+    ON accounts.user_id = users.id
+   AND accounts.provider_id = 'credential'
+WHERE verifications.value = $1
+  AND verifications.expires_at > (now() AT TIME ZONE 'UTC')
+  AND coalesce(users.banned, FALSE) = FALSE
+LIMIT 1
+FOR UPDATE
+`
+
+type GetActivePasswordResetRow struct {
+	ID       string
+	UserID   string
+	Password pgtype.Text
+}
+
+func (q *Queries) GetActivePasswordReset(ctx context.Context, value string) (GetActivePasswordResetRow, error) {
+	row := q.db.QueryRow(ctx, getActivePasswordReset, value)
+	var i GetActivePasswordResetRow
+	err := row.Scan(&i.ID, &i.UserID, &i.Password)
+	return i, err
+}
+
 const getCredentialPasswordByUserID = `-- name: GetCredentialPasswordByUserID :one
 SELECT password
 FROM accounts
@@ -422,6 +462,33 @@ func (q *Queries) GetCredentialUserByEmail(ctx context.Context, lower string) (G
 		&i.Password,
 		&i.TwoFactorEnabled,
 	)
+	return i, err
+}
+
+const getPasswordResetUserByEmail = `-- name: GetPasswordResetUserByEmail :one
+SELECT
+    users.id,
+    users.name,
+    users.email
+FROM users
+JOIN accounts
+    ON accounts.user_id = users.id
+   AND accounts.provider_id = 'credential'
+WHERE lower(users.email) = lower($1)
+  AND coalesce(users.banned, FALSE) = FALSE
+LIMIT 1
+`
+
+type GetPasswordResetUserByEmailRow struct {
+	ID    string
+	Name  string
+	Email string
+}
+
+func (q *Queries) GetPasswordResetUserByEmail(ctx context.Context, lower string) (GetPasswordResetUserByEmailRow, error) {
+	row := q.db.QueryRow(ctx, getPasswordResetUserByEmail, lower)
+	var i GetPasswordResetUserByEmailRow
+	err := row.Scan(&i.ID, &i.Name, &i.Email)
 	return i, err
 }
 

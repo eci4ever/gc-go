@@ -548,11 +548,124 @@ func TestAuthFlowIntegration(t *testing.T) {
 		)
 	}
 	recoveryVerifyResponse.Body.Close()
+
+	unknownResetResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/forgot-password",
+		map[string]string{"email": "unknown@example.com"},
+		nil,
+	)
+	if unknownResetResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"unknown password reset status = %d, want %d",
+			unknownResetResponse.StatusCode,
+			http.StatusNoContent,
+		)
+	}
+	unknownResetResponse.Body.Close()
+
+	forgotPasswordResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/forgot-password",
+		map[string]string{"email": email},
+		nil,
+	)
+	if forgotPasswordResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"forgot password status = %d, want %d",
+			forgotPasswordResponse.StatusCode,
+			http.StatusNoContent,
+		)
+	}
+	forgotPasswordResponse.Body.Close()
+	passwordResetURL, err := url.Parse(emailSender.resetURL)
+	if err != nil || passwordResetURL.Query().Get("token") == "" {
+		t.Fatalf("password reset email did not contain a valid link: %v", err)
+	}
+	passwordResetToken := passwordResetURL.Query().Get("token")
+	resetPasswordResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/reset-password",
+		map[string]string{
+			"token":       passwordResetToken,
+			"newPassword": "reset-horse-battery-staple",
+		},
+		nil,
+	)
+	if resetPasswordResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"reset password status = %d, want %d",
+			resetPasswordResponse.StatusCode,
+			http.StatusNoContent,
+		)
+	}
+	resetPasswordResponse.Body.Close()
+
+	replayedResetResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/reset-password",
+		map[string]string{
+			"token":       passwordResetToken,
+			"newPassword": "another-horse-battery-staple",
+		},
+		nil,
+	)
+	if replayedResetResponse.StatusCode != http.StatusBadRequest {
+		t.Fatalf(
+			"replayed password reset status = %d, want %d",
+			replayedResetResponse.StatusCode,
+			http.StatusBadRequest,
+		)
+	}
+	replayedResetResponse.Body.Close()
+
+	resetLoginResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/login",
+		map[string]string{
+			"email":    email,
+			"password": "reset-horse-battery-staple",
+		},
+		nil,
+	)
+	if resetLoginResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"reset password login status = %d, want %d",
+			resetLoginResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	decodeResponse(t, resetLoginResponse, &loginBody)
+	if !loginBody.TwoFactorRequired {
+		t.Fatal("new password did not authenticate the reset account")
+	}
 }
 
 type verificationEmailRecorder struct {
 	to              string
 	verificationURL string
+	resetURL        string
+}
+
+func (r *verificationEmailRecorder) SendPasswordReset(
+	_ context.Context,
+	to string,
+	_ string,
+	resetURL string,
+) error {
+	r.to = to
+	r.resetURL = resetURL
+	return nil
 }
 
 func (r *verificationEmailRecorder) SendVerification(
