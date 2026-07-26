@@ -5,11 +5,13 @@ import { toast } from 'sonner'
 import {
   BadgeCheckIcon,
   CircleAlertIcon,
+  CopyIcon,
   KeyRoundIcon,
   Loader2Icon,
   MonitorSmartphoneIcon,
   SaveIcon,
   ShieldCheckIcon,
+  ShieldOffIcon,
   Trash2Icon,
 } from 'lucide-react'
 
@@ -41,13 +43,18 @@ import {
 import { Input } from '@/components/ui/input'
 import {
   changePassword,
+  disableTwoFactor,
+  enableTwoFactor,
   revokeOtherSessions,
   revokeSession,
   sessionQueryOptions,
+  setupTwoFactor,
+  twoFactorStatusQueryOptions,
   updateProfile,
   userSessionsQueryOptions,
   type ChangePasswordInput,
   type ManagedSession,
+  type TwoFactorSetup,
   type UpdateProfileInput,
 } from '@/lib/auth'
 
@@ -228,7 +235,7 @@ function Account() {
             Keep your account secure with a strong, unique password.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-wrap gap-2">
           <Dialog
             open={passwordDialogOpen}
             onOpenChange={(open) => {
@@ -317,6 +324,7 @@ function Account() {
               </form>
             </DialogContent>
           </Dialog>
+          <TwoFactorManager />
         </CardContent>
       </Card>
 
@@ -471,4 +479,249 @@ function formatSessionDate(value: string) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value))
+}
+
+function TwoFactorManager() {
+  const [open, setOpen] = useState(false)
+  const [setup, setSetup] = useState<TwoFactorSetup | null>(null)
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null)
+  const queryClient = useQueryClient()
+  const status = useQuery(twoFactorStatusQueryOptions)
+  const setupMutation = useMutation({
+    mutationFn: setupTwoFactor,
+    onSuccess: setSetup,
+    onError: (error) => toast.error(error.message),
+  })
+  const enableMutation = useMutation({
+    mutationFn: enableTwoFactor,
+    onSuccess: async (result) => {
+      setRecoveryCodes(result.recoveryCodes)
+      await queryClient.invalidateQueries({
+        queryKey: twoFactorStatusQueryOptions.queryKey,
+      })
+      toast.success('Two-factor authentication enabled')
+    },
+    onError: (error) => toast.error(error.message),
+  })
+  const disableMutation = useMutation({
+    mutationFn: ({ password, code }: { password: string; code: string }) =>
+      disableTwoFactor(password, code),
+    onSuccess: async () => {
+      setOpen(false)
+      await queryClient.invalidateQueries({
+        queryKey: twoFactorStatusQueryOptions.queryKey,
+      })
+      toast.success('Two-factor authentication disabled')
+    },
+    onError: (error) => toast.error(error.message),
+  })
+  const enabled = status.data?.enabled ?? false
+
+  function reset() {
+    setSetup(null)
+    setRecoveryCodes(null)
+    setupMutation.reset()
+    enableMutation.reset()
+    disableMutation.reset()
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen)
+        if (!nextOpen) reset()
+      }}
+    >
+      <DialogTrigger render={<Button variant="outline" />}>
+        {enabled ? <ShieldOffIcon /> : <ShieldCheckIcon />}
+        {status.isPending
+          ? 'Checking 2FA…'
+          : enabled
+            ? 'Disable 2FA'
+            : 'Enable 2FA'}
+      </DialogTrigger>
+      <DialogContent>
+        {enabled ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              const form = new FormData(event.currentTarget)
+              disableMutation.mutate({
+                password: String(form.get('password') ?? ''),
+                code: String(form.get('code') ?? ''),
+              })
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Disable two-factor authentication</DialogTitle>
+              <DialogDescription>
+                Confirm your password and an authenticator or recovery code.
+              </DialogDescription>
+            </DialogHeader>
+            <FieldGroup className="my-6">
+              <Field>
+                <FieldLabel htmlFor="disable-2fa-password">
+                  Current password
+                </FieldLabel>
+                <Input
+                  id="disable-2fa-password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="disable-2fa-code">
+                  Verification code
+                </FieldLabel>
+                <Input
+                  id="disable-2fa-code"
+                  name="code"
+                  autoComplete="one-time-code"
+                  required
+                />
+              </Field>
+            </FieldGroup>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="destructive"
+                disabled={disableMutation.isPending}
+              >
+                {disableMutation.isPending ? (
+                  <Loader2Icon className="animate-spin" />
+                ) : (
+                  <ShieldOffIcon />
+                )}
+                {disableMutation.isPending ? 'Disabling…' : 'Disable 2FA'}
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : recoveryCodes ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Save your recovery codes</DialogTitle>
+              <DialogDescription>
+                Each code works once. Store them somewhere safe; they will not
+                be shown again.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-2 gap-2 bg-muted p-4 font-mono text-xs">
+              {recoveryCodes.map((code) => (
+                <span key={code}>{code}</span>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(recoveryCodes.join('\n'))
+                  toast.success('Recovery codes copied')
+                }}
+              >
+                <CopyIcon />
+                Copy codes
+              </Button>
+              <Button onClick={() => setOpen(false)}>Done</Button>
+            </DialogFooter>
+          </>
+        ) : setup ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              const form = new FormData(event.currentTarget)
+              enableMutation.mutate(String(form.get('code') ?? ''))
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Scan authenticator code</DialogTitle>
+              <DialogDescription>
+                Scan this QR code, then enter the generated six-digit code.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="my-6 flex flex-col items-center gap-4">
+              <img
+                src={setup.qrCode}
+                alt="Two-factor authenticator QR code"
+                className="size-48"
+              />
+              <code className="break-all bg-muted px-3 py-2 text-xs">
+                {setup.secret}
+              </code>
+              <Field>
+                <FieldLabel htmlFor="enable-2fa-code">
+                  Verification code
+                </FieldLabel>
+                <Input
+                  id="enable-2fa-code"
+                  name="code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="123456"
+                  required
+                  autoFocus
+                />
+              </Field>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={enableMutation.isPending}>
+                {enableMutation.isPending && (
+                  <Loader2Icon className="animate-spin" />
+                )}
+                Verify and enable
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              const form = new FormData(event.currentTarget)
+              setupMutation.mutate(String(form.get('password') ?? ''))
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Enable two-factor authentication</DialogTitle>
+              <DialogDescription>
+                Confirm your password before connecting an authenticator app.
+              </DialogDescription>
+            </DialogHeader>
+            <FieldGroup className="my-6">
+              <Field>
+                <FieldLabel htmlFor="enable-2fa-password">
+                  Current password
+                </FieldLabel>
+                <Input
+                  id="enable-2fa-password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                />
+              </Field>
+            </FieldGroup>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={setupMutation.isPending}>
+                {setupMutation.isPending && (
+                  <Loader2Icon className="animate-spin" />
+                )}
+                Continue
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
 }

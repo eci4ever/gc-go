@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   LogIn,
+  ShieldCheck,
   UserPlus,
 } from 'lucide-react'
 
@@ -34,6 +35,7 @@ import {
   login,
   sessionQueryOptions,
   signup,
+  verifyTwoFactorLogin,
   type LoginInput,
   type SignupInput,
 } from '@/lib/auth'
@@ -46,12 +48,25 @@ type AuthFormProps = {
 
 export function AuthForm({ mode }: AuthFormProps) {
   const [showPassword, setShowPassword] = useState(false)
+  const [challengeToken, setChallengeToken] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const isLogin = mode === 'login'
   const authentication = useMutation({
     mutationFn: (input: LoginInput | SignupInput) =>
       isLogin ? login(input) : signup(input as SignupInput),
+    onSuccess: async (result) => {
+      if ('twoFactorRequired' in result) {
+        setChallengeToken(result.challengeToken)
+        return
+      }
+      queryClient.setQueryData(sessionQueryOptions.queryKey, result)
+      await navigate({ to: '/dashboard' })
+    },
+  })
+  const verification = useMutation({
+    mutationFn: (code: string) =>
+      verifyTwoFactorLogin(challengeToken ?? '', code),
     onSuccess: async (session) => {
       queryClient.setQueryData(sessionQueryOptions.queryKey, session)
       await navigate({ to: '/dashboard' })
@@ -66,6 +81,72 @@ export function AuthForm({ mode }: AuthFormProps) {
       email: String(form.get('email') ?? ''),
       password: String(form.get('password') ?? ''),
     })
+  }
+
+  if (challengeToken) {
+    return (
+      <main className="grid min-h-[calc(100vh-4rem)] place-items-center py-10">
+        <Card className="w-full max-w-sm">
+          <CardHeader>
+            <span className="mb-2 grid size-10 place-items-center bg-primary text-primary-foreground">
+              <ShieldCheck className="size-5" />
+            </span>
+            <CardTitle>Two-factor authentication</CardTitle>
+            <CardDescription>
+              Enter the six-digit code from your authenticator app or use a
+              recovery code.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault()
+                const form = new FormData(event.currentTarget)
+                verification.mutate(String(form.get('code') ?? ''))
+              }}
+            >
+              <FieldGroup>
+                {verification.error && (
+                  <FieldError>{verification.error.message}</FieldError>
+                )}
+                <Field>
+                  <FieldLabel htmlFor="two-factor-code">
+                    Verification code
+                  </FieldLabel>
+                  <Input
+                    id="two-factor-code"
+                    name="code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="123456"
+                    required
+                    autoFocus
+                  />
+                </Field>
+                <Button
+                  type="submit"
+                  size="lg"
+                  disabled={verification.isPending}
+                >
+                  <ShieldCheck />
+                  {verification.isPending ? 'Verifying…' : 'Verify and log in'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setChallengeToken(null)
+                    authentication.reset()
+                  }}
+                >
+                  Back to login
+                </Button>
+              </FieldGroup>
+            </form>
+          </CardContent>
+        </Card>
+      </main>
+    )
   }
 
   return (

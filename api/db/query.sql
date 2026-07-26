@@ -39,12 +39,94 @@ SELECT
     users.banned,
     users.ban_reason,
     users.ban_expires,
-    accounts.password
+    accounts.password,
+    coalesce(two_factors.enabled, FALSE) AS two_factor_enabled
 FROM users
 JOIN accounts ON accounts.user_id = users.id
+LEFT JOIN two_factors ON two_factors.user_id = users.id
 WHERE lower(users.email) = lower($1)
   AND accounts.provider_id = 'credential'
 LIMIT 1;
+
+-- name: UpsertPendingTwoFactor :one
+INSERT INTO two_factors (
+    id,
+    user_id,
+    secret,
+    backup_codes,
+    enabled
+) VALUES (
+    $1,
+    $2,
+    $3,
+    '[]',
+    FALSE
+)
+ON CONFLICT (user_id) DO UPDATE
+SET
+    secret = excluded.secret,
+    backup_codes = '[]',
+    enabled = FALSE
+RETURNING *;
+
+-- name: GetTwoFactorByUserID :one
+SELECT *
+FROM two_factors
+WHERE user_id = $1;
+
+-- name: EnableTwoFactor :exec
+UPDATE two_factors
+SET
+    enabled = TRUE,
+    backup_codes = $2
+WHERE user_id = $1;
+
+-- name: UpdateTwoFactorBackupCodes :exec
+UPDATE two_factors
+SET backup_codes = $2
+WHERE user_id = $1;
+
+-- name: DeleteTwoFactor :exec
+DELETE FROM two_factors
+WHERE user_id = $1;
+
+-- name: CreateTwoFactorChallenge :exec
+INSERT INTO two_factor_challenges (
+    id,
+    token,
+    user_id,
+    expires_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4
+);
+
+-- name: GetTwoFactorChallenge :one
+SELECT
+    two_factor_challenges.id AS challenge_id,
+    two_factor_challenges.user_id,
+    two_factors.secret,
+    two_factors.backup_codes,
+    users.name,
+    users.email,
+    users.email_verified,
+    users.image,
+    users.role
+FROM two_factor_challenges
+JOIN two_factors
+    ON two_factors.user_id = two_factor_challenges.user_id
+   AND two_factors.enabled = TRUE
+JOIN users ON users.id = two_factor_challenges.user_id
+WHERE two_factor_challenges.token = $1
+  AND two_factor_challenges.expires_at > (now() AT TIME ZONE 'UTC')
+  AND coalesce(users.banned, FALSE) = FALSE
+LIMIT 1;
+
+-- name: DeleteTwoFactorChallenge :exec
+DELETE FROM two_factor_challenges
+WHERE id = $1;
 
 -- name: CreateSession :one
 INSERT INTO sessions (

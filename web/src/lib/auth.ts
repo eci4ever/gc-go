@@ -31,6 +31,17 @@ export type SessionResponse = {
   user: AuthUser | null
 }
 
+export type TwoFactorLoginRequired = {
+  twoFactorRequired: true
+  challengeToken: string
+}
+
+export type TwoFactorSetup = {
+  secret: string
+  uri: string
+  qrCode: string
+}
+
 export type LoginInput = {
   email: string
   password: string
@@ -72,10 +83,45 @@ export const userSessionsQueryOptions = queryOptions({
   retry: false,
 })
 
+export const twoFactorStatusQueryOptions = queryOptions({
+  queryKey: ['auth', 'two-factor'] as const,
+  queryFn: () => request<{ enabled: boolean }>('/api/auth/2fa/status'),
+  staleTime: 30_000,
+  retry: false,
+})
+
 export function login(input: LoginInput) {
-  return request<SessionResponse>('/api/auth/login', {
+  return request<SessionResponse | TwoFactorLoginRequired>('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify(input),
+  })
+}
+
+export function verifyTwoFactorLogin(challengeToken: string, code: string) {
+  return request<SessionResponse>('/api/auth/2fa/verify-login', {
+    method: 'POST',
+    body: JSON.stringify({ challengeToken, code }),
+  })
+}
+
+export function setupTwoFactor(password: string) {
+  return request<TwoFactorSetup>('/api/auth/2fa/setup', {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  })
+}
+
+export function enableTwoFactor(code: string) {
+  return request<{ recoveryCodes: string[] }>('/api/auth/2fa/enable', {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  })
+}
+
+export function disableTwoFactor(password: string, code: string) {
+  return emptyRequest('/api/auth/2fa/disable', {
+    method: 'POST',
+    body: JSON.stringify({ password, code }),
   })
 }
 

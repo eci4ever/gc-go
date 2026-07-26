@@ -97,6 +97,11 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Get("/sessions", h.listSessions)
 	router.Delete("/sessions", h.revokeOtherSessions)
 	router.Delete("/sessions/:id", h.revokeSession)
+	router.Get("/2fa/status", h.twoFactorStatus)
+	router.Post("/2fa/setup", h.setupTwoFactor)
+	router.Post("/2fa/enable", h.enableTwoFactor)
+	router.Post("/2fa/disable", h.disableTwoFactor)
+	router.Post("/2fa/verify-login", h.verifyTwoFactorLogin)
 }
 
 func (h *Handler) signup(c fiber.Ctx) error {
@@ -223,6 +228,31 @@ func (h *Handler) login(c fiber.Ctx) error {
 	}
 	if user.Banned.Valid && user.Banned.Bool {
 		return jsonError(c, fiber.StatusForbidden, "This account is unavailable")
+	}
+	if user.TwoFactorEnabled {
+		challengeToken, challengeHash, err := newSessionToken()
+		if err != nil {
+			return jsonError(c, fiber.StatusInternalServerError, "Unable to log in")
+		}
+		challengeID, err := randomValue(18)
+		if err != nil {
+			return jsonError(c, fiber.StatusInternalServerError, "Unable to log in")
+		}
+		if err := h.queries.CreateTwoFactorChallenge(
+			c.Context(),
+			db.CreateTwoFactorChallengeParams{
+				ID:        challengeID,
+				Token:     challengeHash,
+				UserID:    user.ID,
+				ExpiresAt: timestampValue(time.Now().UTC().Add(5 * time.Minute)),
+			},
+		); err != nil {
+			return jsonError(c, fiber.StatusInternalServerError, "Unable to log in")
+		}
+		return c.JSON(fiber.Map{
+			"twoFactorRequired": true,
+			"challengeToken":    challengeToken,
+		})
 	}
 
 	rawToken, tokenHash, err := newSessionToken()

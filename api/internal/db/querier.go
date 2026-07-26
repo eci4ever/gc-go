@@ -13,17 +13,25 @@ import (
 type Querier interface {
 	CreateCredentialAccount(ctx context.Context, arg CreateCredentialAccountParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	CreateTwoFactorChallenge(ctx context.Context, arg CreateTwoFactorChallengeParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
 	DeleteSession(ctx context.Context, token string) error
+	DeleteTwoFactor(ctx context.Context, userID string) error
+	DeleteTwoFactorChallenge(ctx context.Context, id string) error
+	EnableTwoFactor(ctx context.Context, arg EnableTwoFactorParams) error
 	GetCredentialPasswordByUserID(ctx context.Context, userID string) (pgtype.Text, error)
 	GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error)
 	GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error)
+	GetTwoFactorByUserID(ctx context.Context, userID string) (TwoFactor, error)
+	GetTwoFactorChallenge(ctx context.Context, token string) (GetTwoFactorChallengeRow, error)
 	ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error)
 	Ping(ctx context.Context) (int32, error)
 	RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) (string, error)
 	UpdateCredentialPassword(ctx context.Context, arg UpdateCredentialPasswordParams) error
+	UpdateTwoFactorBackupCodes(ctx context.Context, arg UpdateTwoFactorBackupCodesParams) error
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
+	UpsertPendingTwoFactor(ctx context.Context, arg UpsertPendingTwoFactorParams) (TwoFactor, error)
 }
 
 var _ Querier = (*Queries)(nil)

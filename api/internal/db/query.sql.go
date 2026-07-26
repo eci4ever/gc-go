@@ -98,6 +98,37 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 	return i, err
 }
 
+const createTwoFactorChallenge = `-- name: CreateTwoFactorChallenge :exec
+INSERT INTO two_factor_challenges (
+    id,
+    token,
+    user_id,
+    expires_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4
+)
+`
+
+type CreateTwoFactorChallengeParams struct {
+	ID        string
+	Token     string
+	UserID    string
+	ExpiresAt pgtype.Timestamp
+}
+
+func (q *Queries) CreateTwoFactorChallenge(ctx context.Context, arg CreateTwoFactorChallengeParams) error {
+	_, err := q.db.Exec(ctx, createTwoFactorChallenge,
+		arg.ID,
+		arg.Token,
+		arg.UserID,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (
     id,
@@ -162,6 +193,44 @@ func (q *Queries) DeleteSession(ctx context.Context, token string) error {
 	return err
 }
 
+const deleteTwoFactor = `-- name: DeleteTwoFactor :exec
+DELETE FROM two_factors
+WHERE user_id = $1
+`
+
+func (q *Queries) DeleteTwoFactor(ctx context.Context, userID string) error {
+	_, err := q.db.Exec(ctx, deleteTwoFactor, userID)
+	return err
+}
+
+const deleteTwoFactorChallenge = `-- name: DeleteTwoFactorChallenge :exec
+DELETE FROM two_factor_challenges
+WHERE id = $1
+`
+
+func (q *Queries) DeleteTwoFactorChallenge(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, deleteTwoFactorChallenge, id)
+	return err
+}
+
+const enableTwoFactor = `-- name: EnableTwoFactor :exec
+UPDATE two_factors
+SET
+    enabled = TRUE,
+    backup_codes = $2
+WHERE user_id = $1
+`
+
+type EnableTwoFactorParams struct {
+	UserID      string
+	BackupCodes string
+}
+
+func (q *Queries) EnableTwoFactor(ctx context.Context, arg EnableTwoFactorParams) error {
+	_, err := q.db.Exec(ctx, enableTwoFactor, arg.UserID, arg.BackupCodes)
+	return err
+}
+
 const getCredentialPasswordByUserID = `-- name: GetCredentialPasswordByUserID :one
 SELECT password
 FROM accounts
@@ -188,25 +257,28 @@ SELECT
     users.banned,
     users.ban_reason,
     users.ban_expires,
-    accounts.password
+    accounts.password,
+    coalesce(two_factors.enabled, FALSE) AS two_factor_enabled
 FROM users
 JOIN accounts ON accounts.user_id = users.id
+LEFT JOIN two_factors ON two_factors.user_id = users.id
 WHERE lower(users.email) = lower($1)
   AND accounts.provider_id = 'credential'
 LIMIT 1
 `
 
 type GetCredentialUserByEmailRow struct {
-	ID            string
-	Name          string
-	Email         string
-	EmailVerified bool
-	Image         pgtype.Text
-	Role          string
-	Banned        pgtype.Bool
-	BanReason     pgtype.Text
-	BanExpires    pgtype.Timestamp
-	Password      pgtype.Text
+	ID               string
+	Name             string
+	Email            string
+	EmailVerified    bool
+	Image            pgtype.Text
+	Role             string
+	Banned           pgtype.Bool
+	BanReason        pgtype.Text
+	BanExpires       pgtype.Timestamp
+	Password         pgtype.Text
+	TwoFactorEnabled bool
 }
 
 func (q *Queries) GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error) {
@@ -223,6 +295,7 @@ func (q *Queries) GetCredentialUserByEmail(ctx context.Context, lower string) (G
 		&i.BanReason,
 		&i.BanExpires,
 		&i.Password,
+		&i.TwoFactorEnabled,
 	)
 	return i, err
 }
@@ -289,6 +362,78 @@ func (q *Queries) GetSessionUser(ctx context.Context, token string) (GetSessionU
 		&i.UserEmailVerified,
 		&i.UserImage,
 		&i.UserRole,
+	)
+	return i, err
+}
+
+const getTwoFactorByUserID = `-- name: GetTwoFactorByUserID :one
+SELECT id, user_id, secret, backup_codes, enabled, created_at, updated_at
+FROM two_factors
+WHERE user_id = $1
+`
+
+func (q *Queries) GetTwoFactorByUserID(ctx context.Context, userID string) (TwoFactor, error) {
+	row := q.db.QueryRow(ctx, getTwoFactorByUserID, userID)
+	var i TwoFactor
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Secret,
+		&i.BackupCodes,
+		&i.Enabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getTwoFactorChallenge = `-- name: GetTwoFactorChallenge :one
+SELECT
+    two_factor_challenges.id AS challenge_id,
+    two_factor_challenges.user_id,
+    two_factors.secret,
+    two_factors.backup_codes,
+    users.name,
+    users.email,
+    users.email_verified,
+    users.image,
+    users.role
+FROM two_factor_challenges
+JOIN two_factors
+    ON two_factors.user_id = two_factor_challenges.user_id
+   AND two_factors.enabled = TRUE
+JOIN users ON users.id = two_factor_challenges.user_id
+WHERE two_factor_challenges.token = $1
+  AND two_factor_challenges.expires_at > (now() AT TIME ZONE 'UTC')
+  AND coalesce(users.banned, FALSE) = FALSE
+LIMIT 1
+`
+
+type GetTwoFactorChallengeRow struct {
+	ChallengeID   string
+	UserID        string
+	Secret        string
+	BackupCodes   string
+	Name          string
+	Email         string
+	EmailVerified bool
+	Image         pgtype.Text
+	Role          string
+}
+
+func (q *Queries) GetTwoFactorChallenge(ctx context.Context, token string) (GetTwoFactorChallengeRow, error) {
+	row := q.db.QueryRow(ctx, getTwoFactorChallenge, token)
+	var i GetTwoFactorChallengeRow
+	err := row.Scan(
+		&i.ChallengeID,
+		&i.UserID,
+		&i.Secret,
+		&i.BackupCodes,
+		&i.Name,
+		&i.Email,
+		&i.EmailVerified,
+		&i.Image,
+		&i.Role,
 	)
 	return i, err
 }
@@ -414,6 +559,22 @@ func (q *Queries) UpdateCredentialPassword(ctx context.Context, arg UpdateCreden
 	return err
 }
 
+const updateTwoFactorBackupCodes = `-- name: UpdateTwoFactorBackupCodes :exec
+UPDATE two_factors
+SET backup_codes = $2
+WHERE user_id = $1
+`
+
+type UpdateTwoFactorBackupCodesParams struct {
+	UserID      string
+	BackupCodes string
+}
+
+func (q *Queries) UpdateTwoFactorBackupCodes(ctx context.Context, arg UpdateTwoFactorBackupCodesParams) error {
+	_, err := q.db.Exec(ctx, updateTwoFactorBackupCodes, arg.UserID, arg.BackupCodes)
+	return err
+}
+
 const updateUserProfile = `-- name: UpdateUserProfile :one
 UPDATE users
 SET
@@ -445,6 +606,49 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		&i.Banned,
 		&i.BanReason,
 		&i.BanExpires,
+	)
+	return i, err
+}
+
+const upsertPendingTwoFactor = `-- name: UpsertPendingTwoFactor :one
+INSERT INTO two_factors (
+    id,
+    user_id,
+    secret,
+    backup_codes,
+    enabled
+) VALUES (
+    $1,
+    $2,
+    $3,
+    '[]',
+    FALSE
+)
+ON CONFLICT (user_id) DO UPDATE
+SET
+    secret = excluded.secret,
+    backup_codes = '[]',
+    enabled = FALSE
+RETURNING id, user_id, secret, backup_codes, enabled, created_at, updated_at
+`
+
+type UpsertPendingTwoFactorParams struct {
+	ID     string
+	UserID string
+	Secret string
+}
+
+func (q *Queries) UpsertPendingTwoFactor(ctx context.Context, arg UpsertPendingTwoFactorParams) (TwoFactor, error) {
+	row := q.db.QueryRow(ctx, upsertPendingTwoFactor, arg.ID, arg.UserID, arg.Secret)
+	var i TwoFactor
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Secret,
+		&i.BackupCodes,
+		&i.Enabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

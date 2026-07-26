@@ -82,6 +82,24 @@ type TeamMember struct {
 	CreatedAt pgtype.Timestamp
 }
 
+type TwoFactor struct {
+	ID          string
+	UserID      string
+	Secret      string
+	BackupCodes string
+	Enabled     bool
+	CreatedAt   pgtype.Timestamp
+	UpdatedAt   pgtype.Timestamp
+}
+
+type TwoFactorChallenge struct {
+	ID        string
+	Token     string
+	UserID    string
+	ExpiresAt pgtype.Timestamp
+	CreatedAt pgtype.Timestamp
+}
+
 type User struct {
 	ID            string
 	Name          string

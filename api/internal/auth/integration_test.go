@@ -15,6 +15,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/pquerna/otp/totp"
 
 	"gc-go/api/internal/db"
 )
@@ -298,6 +299,63 @@ func TestAuthFlowIntegration(t *testing.T) {
 	}
 	passwordResponse.Body.Close()
 
+	twoFactorSetupResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/2fa/setup",
+		map[string]string{"password": "updated-horse-battery-staple"},
+		cookies[0],
+	)
+	if twoFactorSetupResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"2fa setup status = %d, want %d",
+			twoFactorSetupResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	var twoFactorSetupBody struct {
+		Secret string `json:"secret"`
+		QRCode string `json:"qrCode"`
+	}
+	decodeResponse(t, twoFactorSetupResponse, &twoFactorSetupBody)
+	if twoFactorSetupBody.Secret == "" ||
+		!strings.HasPrefix(twoFactorSetupBody.QRCode, "data:image/png;base64,") {
+		t.Fatal("2fa setup did not return a secret and QR code")
+	}
+	twoFactorCode, err := totp.GenerateCode(
+		twoFactorSetupBody.Secret,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		t.Fatalf("generate 2fa code: %v", err)
+	}
+	twoFactorEnableResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/2fa/enable",
+		map[string]string{"code": twoFactorCode},
+		cookies[0],
+	)
+	if twoFactorEnableResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"2fa enable status = %d, want %d",
+			twoFactorEnableResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	var twoFactorEnableBody struct {
+		RecoveryCodes []string `json:"recoveryCodes"`
+	}
+	decodeResponse(t, twoFactorEnableResponse, &twoFactorEnableBody)
+	if len(twoFactorEnableBody.RecoveryCodes) != 10 {
+		t.Fatalf(
+			"recovery code count = %d, want 10",
+			len(twoFactorEnableBody.RecoveryCodes),
+		)
+	}
+
 	logoutResponse := authRequest(
 		t,
 		app,
@@ -318,7 +376,101 @@ func TestAuthFlowIntegration(t *testing.T) {
 	if loginResponse.StatusCode != http.StatusOK {
 		t.Fatalf("login status = %d, want %d", loginResponse.StatusCode, http.StatusOK)
 	}
-	loginResponse.Body.Close()
+	var loginBody struct {
+		TwoFactorRequired bool   `json:"twoFactorRequired"`
+		ChallengeToken    string `json:"challengeToken"`
+	}
+	decodeResponse(t, loginResponse, &loginBody)
+	if !loginBody.TwoFactorRequired || loginBody.ChallengeToken == "" {
+		t.Fatal("login did not require a two-factor challenge")
+	}
+
+	twoFactorCode, err = totp.GenerateCode(
+		twoFactorSetupBody.Secret,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		t.Fatalf("generate login 2fa code: %v", err)
+	}
+	verifyLoginResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/2fa/verify-login",
+		map[string]string{
+			"challengeToken": loginBody.ChallengeToken,
+			"code":           twoFactorCode,
+		},
+		nil,
+	)
+	if verifyLoginResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"2fa login status = %d, want %d",
+			verifyLoginResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	verifiedCookies := verifyLoginResponse.Cookies()
+	verifyLoginResponse.Body.Close()
+	if len(verifiedCookies) == 0 {
+		t.Fatal("2fa login did not set a session cookie")
+	}
+
+	recoveryLogoutResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/logout",
+		nil,
+		verifiedCookies[0],
+	)
+	if recoveryLogoutResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"recovery logout status = %d, want %d",
+			recoveryLogoutResponse.StatusCode,
+			http.StatusNoContent,
+		)
+	}
+	recoveryLogoutResponse.Body.Close()
+
+	recoveryLoginResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/login",
+		map[string]string{
+			"email":    email,
+			"password": "updated-horse-battery-staple",
+		},
+		nil,
+	)
+	if recoveryLoginResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"recovery login status = %d, want %d",
+			recoveryLoginResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	decodeResponse(t, recoveryLoginResponse, &loginBody)
+	recoveryVerifyResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/2fa/verify-login",
+		map[string]string{
+			"challengeToken": loginBody.ChallengeToken,
+			"code":           twoFactorEnableBody.RecoveryCodes[0],
+		},
+		nil,
+	)
+	if recoveryVerifyResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"recovery code status = %d, want %d",
+			recoveryVerifyResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	recoveryVerifyResponse.Body.Close()
 }
 
 func authRequest(
