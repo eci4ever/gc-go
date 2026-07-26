@@ -44,7 +44,7 @@ func (q *Queries) CreateCredentialAccount(ctx context.Context, arg CreateCredent
 	return err
 }
 
-const createSession = `-- name: CreateSession :exec
+const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (
     id,
     expires_at,
@@ -60,6 +60,7 @@ INSERT INTO sessions (
     $5,
     $6
 )
+RETURNING id, expires_at, token, created_at, updated_at, ip_address, user_agent, user_id, impersonated_by, active_organization_id, active_team_id
 `
 
 type CreateSessionParams struct {
@@ -71,8 +72,8 @@ type CreateSessionParams struct {
 	UserID    string
 }
 
-func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) error {
-	_, err := q.db.Exec(ctx, createSession,
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
+	row := q.db.QueryRow(ctx, createSession,
 		arg.ID,
 		arg.ExpiresAt,
 		arg.Token,
@@ -80,7 +81,21 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 		arg.UserAgent,
 		arg.UserID,
 	)
-	return err
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.ExpiresAt,
+		&i.Token,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IpAddress,
+		&i.UserAgent,
+		&i.UserID,
+		&i.ImpersonatedBy,
+		&i.ActiveOrganizationID,
+		&i.ActiveTeamID,
+	)
+	return i, err
 }
 
 const createUser = `-- name: CreateUser :one
@@ -183,12 +198,21 @@ func (q *Queries) GetCredentialUserByEmail(ctx context.Context, lower string) (G
 
 const getSessionUser = `-- name: GetSessionUser :one
 SELECT
-    users.id,
-    users.name,
-    users.email,
-    users.email_verified,
-    users.image,
-    users.role
+    sessions.id AS session_id,
+    sessions.expires_at,
+    sessions.created_at,
+    sessions.updated_at,
+    sessions.ip_address,
+    sessions.user_agent,
+    sessions.user_id,
+    sessions.impersonated_by,
+    sessions.active_organization_id,
+    sessions.active_team_id,
+    users.name AS user_name,
+    users.email AS user_email,
+    users.email_verified AS user_email_verified,
+    users.image AS user_image,
+    users.role AS user_role
 FROM sessions
 JOIN users ON users.id = sessions.user_id
 WHERE sessions.token = $1
@@ -198,24 +222,42 @@ LIMIT 1
 `
 
 type GetSessionUserRow struct {
-	ID            string
-	Name          string
-	Email         string
-	EmailVerified bool
-	Image         pgtype.Text
-	Role          string
+	SessionID            string
+	ExpiresAt            pgtype.Timestamp
+	CreatedAt            pgtype.Timestamp
+	UpdatedAt            pgtype.Timestamp
+	IpAddress            pgtype.Text
+	UserAgent            pgtype.Text
+	UserID               string
+	ImpersonatedBy       pgtype.Text
+	ActiveOrganizationID pgtype.Text
+	ActiveTeamID         pgtype.Text
+	UserName             string
+	UserEmail            string
+	UserEmailVerified    bool
+	UserImage            pgtype.Text
+	UserRole             string
 }
 
 func (q *Queries) GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error) {
 	row := q.db.QueryRow(ctx, getSessionUser, token)
 	var i GetSessionUserRow
 	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Email,
-		&i.EmailVerified,
-		&i.Image,
-		&i.Role,
+		&i.SessionID,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IpAddress,
+		&i.UserAgent,
+		&i.UserID,
+		&i.ImpersonatedBy,
+		&i.ActiveOrganizationID,
+		&i.ActiveTeamID,
+		&i.UserName,
+		&i.UserEmail,
+		&i.UserEmailVerified,
+		&i.UserImage,
+		&i.UserRole,
 	)
 	return i, err
 }

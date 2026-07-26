@@ -66,18 +66,23 @@ func TestAuthFlowIntegration(t *testing.T) {
 		t.Fatalf("signup status = %d, want %d", signupResponse.StatusCode, http.StatusCreated)
 	}
 	var signupBody struct {
-		User userResponse `json:"user"`
+		Session sessionResponse `json:"session"`
+		User    userResponse    `json:"user"`
 	}
 	decodeResponse(t, signupResponse, &signupBody)
 	if signupBody.User.Role != "user" {
 		t.Fatalf("signup role = %q, want user", signupBody.User.Role)
+	}
+	if signupBody.Session.ID == "" ||
+		signupBody.Session.UserID != signupBody.User.ID {
+		t.Fatal("signup did not return its session")
 	}
 	cookies := signupResponse.Cookies()
 	if len(cookies) == 0 {
 		t.Fatal("signup did not set a session cookie")
 	}
 
-	sessionResponse := authRequest(
+	sessionHTTPResponse := authRequest(
 		t,
 		app,
 		http.MethodGet,
@@ -85,15 +90,20 @@ func TestAuthFlowIntegration(t *testing.T) {
 		nil,
 		cookies[0],
 	)
-	if sessionResponse.StatusCode != http.StatusOK {
-		t.Fatalf("session status = %d, want %d", sessionResponse.StatusCode, http.StatusOK)
+	if sessionHTTPResponse.StatusCode != http.StatusOK {
+		t.Fatalf("session status = %d, want %d", sessionHTTPResponse.StatusCode, http.StatusOK)
 	}
 	var sessionBody struct {
-		User *userResponse `json:"user"`
+		Session *sessionResponse `json:"session"`
+		User    *userResponse    `json:"user"`
 	}
-	decodeResponse(t, sessionResponse, &sessionBody)
+	decodeResponse(t, sessionHTTPResponse, &sessionBody)
 	if sessionBody.User == nil || !strings.EqualFold(sessionBody.User.Email, email) {
 		t.Fatal("session did not return the signed-up user")
+	}
+	if sessionBody.Session == nil ||
+		sessionBody.Session.ID != signupBody.Session.ID {
+		t.Fatal("session lookup did not return the active session")
 	}
 
 	logoutResponse := authRequest(

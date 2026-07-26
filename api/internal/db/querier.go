@@ -10,7 +10,7 @@ import (
 
 type Querier interface {
 	CreateCredentialAccount(ctx context.Context, arg CreateCredentialAccountParams) error
-	CreateSession(ctx context.Context, arg CreateSessionParams) error
+	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteSession(ctx context.Context, token string) error
 	GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error)

@@ -36,7 +36,10 @@ function Dashboard() {
   const logoutMutation = useMutation({
     mutationFn: logout,
     onSuccess: async () => {
-      queryClient.setQueryData(sessionQueryOptions.queryKey, { user: null })
+      queryClient.setQueryData(sessionQueryOptions.queryKey, {
+        session: null,
+        user: null,
+      })
       await navigate({ to: '/' })
       await router.invalidate()
     },

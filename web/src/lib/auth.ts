@@ -9,7 +9,21 @@ export type AuthUser = {
   role: string
 }
 
+export type AuthSession = {
+  id: string
+  expiresAt: string
+  createdAt: string
+  updatedAt: string
+  ipAddress: string | null
+  userAgent: string | null
+  userId: string
+  impersonatedBy: string | null
+  activeOrganizationId: string | null
+  activeTeamId: string | null
+}
+
 export type SessionResponse = {
+  session: AuthSession | null
   user: AuthUser | null
 }
 

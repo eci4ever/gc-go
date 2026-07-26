@@ -46,7 +46,7 @@ WHERE lower(users.email) = lower($1)
   AND accounts.provider_id = 'credential'
 LIMIT 1;
 
--- name: CreateSession :exec
+-- name: CreateSession :one
 INSERT INTO sessions (
     id,
     expires_at,
@@ -61,16 +61,26 @@ INSERT INTO sessions (
     $4,
     $5,
     $6
-);
+)
+RETURNING *;
 
 -- name: GetSessionUser :one
 SELECT
-    users.id,
-    users.name,
-    users.email,
-    users.email_verified,
-    users.image,
-    users.role
+    sessions.id AS session_id,
+    sessions.expires_at,
+    sessions.created_at,
+    sessions.updated_at,
+    sessions.ip_address,
+    sessions.user_agent,
+    sessions.user_id,
+    sessions.impersonated_by,
+    sessions.active_organization_id,
+    sessions.active_team_id,
+    users.name AS user_name,
+    users.email AS user_email,
+    users.email_verified AS user_email_verified,
+    users.image AS user_image,
+    users.role AS user_role
 FROM sessions
 JOIN users ON users.id = sessions.user_id
 WHERE sessions.token = $1

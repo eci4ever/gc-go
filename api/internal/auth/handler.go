@@ -46,6 +46,19 @@ type userResponse struct {
 	Role          string  `json:"role"`
 }
 
+type sessionResponse struct {
+	ID                   string    `json:"id"`
+	ExpiresAt            time.Time `json:"expiresAt"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt"`
+	IPAddress            *string   `json:"ipAddress"`
+	UserAgent            *string   `json:"userAgent"`
+	UserID               string    `json:"userId"`
+	ImpersonatedBy       *string   `json:"impersonatedBy"`
+	ActiveOrganizationID *string   `json:"activeOrganizationId"`
+	ActiveTeamID         *string   `json:"activeTeamId"`
+}
+
 func NewHandler(
 	pool *pgxpool.Pool,
 	queries *db.Queries,
@@ -142,13 +155,14 @@ func (h *Handler) signup(c fiber.Ctx) error {
 	); err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to create account")
 	}
-	if err := queries.CreateSession(c.Context(), sessionParams(
+	session, err := queries.CreateSession(c.Context(), sessionParams(
 		sessionID,
 		tokenHash,
 		userID,
 		expiresAt,
 		c,
-	)); err != nil {
+	))
+	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to create account")
 	}
 	if err := transaction.Commit(c.Context()); err != nil {
@@ -157,7 +171,8 @@ func (h *Handler) signup(c fiber.Ctx) error {
 
 	h.setSessionCookie(c, rawToken, expiresAt)
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
-		"user": userFromModel(user),
+		"session": sessionFromModel(session),
+		"user":    userFromModel(user),
 	})
 }
 
@@ -198,39 +213,42 @@ func (h *Handler) login(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to log in")
 	}
 	expiresAt := time.Now().UTC().Add(sessionLifetime)
-	if err := h.queries.CreateSession(c.Context(), sessionParams(
+	session, err := h.queries.CreateSession(c.Context(), sessionParams(
 		sessionID,
 		tokenHash,
 		user.ID,
 		expiresAt,
 		c,
-	)); err != nil {
+	))
+	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to log in")
 	}
 
 	h.setSessionCookie(c, rawToken, expiresAt)
 	return c.JSON(fiber.Map{
-		"user": userFromCredentialRow(user),
+		"session": sessionFromModel(session),
+		"user":    userFromCredentialRow(user),
 	})
 }
 
 func (h *Handler) session(c fiber.Ctx) error {
 	rawToken := c.Cookies(sessionCookieName)
 	if rawToken == "" {
-		return c.JSON(fiber.Map{"user": nil})
+		return c.JSON(fiber.Map{"session": nil, "user": nil})
 	}
 
 	user, err := h.queries.GetSessionUser(c.Context(), hashToken(rawToken))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			h.clearSessionCookie(c)
-			return c.JSON(fiber.Map{"user": nil})
+			return c.JSON(fiber.Map{"session": nil, "user": nil})
 		}
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to read session")
 	}
 
 	return c.JSON(fiber.Map{
-		"user": userFromSessionRow(user),
+		"session": sessionFromRow(user),
+		"user":    userFromSessionRow(user),
 	})
 }
 
@@ -338,6 +356,36 @@ func stringPointer(value pgtype.Text) *string {
 	return &value.String
 }
 
+func sessionFromModel(session db.Session) sessionResponse {
+	return sessionResponse{
+		ID:                   session.ID,
+		ExpiresAt:            session.ExpiresAt.Time,
+		CreatedAt:            session.CreatedAt.Time,
+		UpdatedAt:            session.UpdatedAt.Time,
+		IPAddress:            stringPointer(session.IpAddress),
+		UserAgent:            stringPointer(session.UserAgent),
+		UserID:               session.UserID,
+		ImpersonatedBy:       stringPointer(session.ImpersonatedBy),
+		ActiveOrganizationID: stringPointer(session.ActiveOrganizationID),
+		ActiveTeamID:         stringPointer(session.ActiveTeamID),
+	}
+}
+
+func sessionFromRow(row db.GetSessionUserRow) sessionResponse {
+	return sessionResponse{
+		ID:                   row.SessionID,
+		ExpiresAt:            row.ExpiresAt.Time,
+		CreatedAt:            row.CreatedAt.Time,
+		UpdatedAt:            row.UpdatedAt.Time,
+		IPAddress:            stringPointer(row.IpAddress),
+		UserAgent:            stringPointer(row.UserAgent),
+		UserID:               row.UserID,
+		ImpersonatedBy:       stringPointer(row.ImpersonatedBy),
+		ActiveOrganizationID: stringPointer(row.ActiveOrganizationID),
+		ActiveTeamID:         stringPointer(row.ActiveTeamID),
+	}
+}
+
 func userFromModel(user db.User) userResponse {
 	return userResponse{
 		ID:            user.ID,
@@ -362,12 +410,12 @@ func userFromCredentialRow(user db.GetCredentialUserByEmailRow) userResponse {
 
 func userFromSessionRow(user db.GetSessionUserRow) userResponse {
 	return userResponse{
-		ID:            user.ID,
-		Name:          user.Name,
-		Email:         user.Email,
-		EmailVerified: user.EmailVerified,
-		Image:         stringPointer(user.Image),
-		Role:          user.Role,
+		ID:            user.UserID,
+		Name:          user.UserName,
+		Email:         user.UserEmail,
+		EmailVerified: user.UserEmailVerified,
+		Image:         stringPointer(user.UserImage),
+		Role:          user.UserRole,
 	}
 }
 
