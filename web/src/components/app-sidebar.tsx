@@ -4,6 +4,7 @@ import { LayoutDashboardIcon, UserRoundIcon } from 'lucide-react'
 
 import type { AuthUser } from '@/lib/auth'
 import { NavUser } from '@/components/nav-user'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Sidebar,
   SidebarContent,
@@ -47,13 +48,15 @@ export function AppSidebar({
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader>
+      <SidebarHeader className="group-data-[collapsible=icon]:px-3">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" render={<Link to="/dashboard" />}>
-              <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                GC
-              </div>
+              <Avatar>
+                <AvatarFallback className="bg-primary text-primary-foreground">
+                  GC
+                </AvatarFallback>
+              </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">GC Go</span>
                 <span className="truncate text-xs">Workspace</span>
@@ -63,7 +66,7 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
+        <SidebarGroup className="group-data-[collapsible=icon]:px-3">
           <SidebarGroupLabel>Menu</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -83,7 +86,7 @@ export function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="group-data-[collapsible=icon]:px-3">
         <NavUser
           user={user}
           onLogout={onLogout}
