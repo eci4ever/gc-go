@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import {
   BadgeCheckIcon,
   CircleAlertIcon,
@@ -21,7 +22,6 @@ import {
 import {
   Field,
   FieldDescription,
-  FieldError,
   FieldGroup,
   FieldLabel,
 } from '@/components/ui/field'
@@ -46,7 +46,9 @@ function Account() {
     onSuccess: async (session) => {
       queryClient.setQueryData(sessionQueryOptions.queryKey, session)
       await router.invalidate()
+      toast.success('Profile updated successfully')
     },
+    onError: (error) => toast.error(error.message),
   })
   const initials = user.name
     .split(/\s+/)
@@ -83,15 +85,6 @@ function Account() {
         <CardContent>
           <form onSubmit={handleSubmit}>
             <FieldGroup>
-              {profileMutation.error && (
-                <FieldError>{profileMutation.error.message}</FieldError>
-              )}
-              {profileMutation.isSuccess && (
-                <p className="text-xs text-primary">
-                  Profile updated successfully.
-                </p>
-              )}
-
               <Field>
                 <FieldLabel htmlFor="name">Name</FieldLabel>
                 <Input
