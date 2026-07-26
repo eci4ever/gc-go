@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Activity } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { ThemeSwitcher } from '@/components/theme-switcher'
 import { sessionQueryOptions } from '@/lib/auth'
 
 export function SiteHeader() {
@@ -38,6 +39,7 @@ export function SiteHeader() {
               About
             </Link>
           </nav>
+          <ThemeSwitcher />
           {session.data?.user ? (
             <Button render={<Link to="/dashboard" />}>Dashboard</Button>
           ) : (
