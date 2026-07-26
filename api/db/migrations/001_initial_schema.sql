@@ -7,11 +7,13 @@ CREATE TABLE users (
     image TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     updated_at TIMESTAMP NOT NULL DEFAULT now(),
-    role TEXT,
+    role TEXT NOT NULL DEFAULT 'user',
     banned BOOLEAN DEFAULT FALSE,
     ban_reason TEXT,
     ban_expires TIMESTAMP
 );
+
+CREATE UNIQUE INDEX users_email_lower_idx ON users (lower(email));
 
 CREATE TABLE organizations (
     id TEXT PRIMARY KEY,
@@ -49,6 +51,7 @@ CREATE TABLE sessions (
 );
 
 CREATE INDEX sessions_user_id_idx ON sessions (user_id);
+CREATE INDEX sessions_expires_at_idx ON sessions (expires_at);
 
 CREATE TABLE accounts (
     id TEXT PRIMARY KEY,
@@ -68,6 +71,8 @@ CREATE TABLE accounts (
 );
 
 CREATE INDEX accounts_user_id_idx ON accounts (user_id);
+CREATE UNIQUE INDEX accounts_provider_account_id_idx
+    ON accounts (provider_id, account_id);
 
 CREATE TABLE verifications (
     id TEXT PRIMARY KEY,

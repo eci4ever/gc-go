@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/joho/godotenv"
@@ -27,7 +30,7 @@ WHERE table_schema = current_schema()
   )
 ORDER BY table_name`
 
-var pluralTables = []string{
+var applicationTables = []string{
 	"users",
 	"sessions",
 	"accounts",
@@ -62,41 +65,125 @@ func main() {
 	}
 	defer connection.Close(ctx)
 
+	migrations, err := migrationFiles("db/migrations")
+	if err != nil {
+		log.Fatalf("list migrations: %v", err)
+	}
+
 	existingTables, err := findExistingTables(ctx, connection)
 	if err != nil {
 		log.Fatalf("inspect database schema: %v", err)
 	}
-
-	if containsAll(existingTables, pluralTables) {
-		fmt.Println("Database schema is already present; no migration was applied.")
-		return
-	}
-	if len(existingTables) > 0 {
+	if len(existingTables) > 0 && !containsAll(existingTables, applicationTables) {
 		log.Fatalf(
-			"refusing to apply schema over a partial installation; existing tables: %v",
+			"refusing to migrate a partial installation; existing tables: %v",
 			existingTables,
 		)
 	}
 
-	applySQLFile(ctx, connection, "db/migrations/001_initial_schema.sql")
+	if _, err := connection.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS schema_migrations (
+			version TEXT PRIMARY KEY,
+			applied_at TIMESTAMP NOT NULL DEFAULT now()
+		)`); err != nil {
+		log.Fatalf("create migration ledger: %v", err)
+	}
 
-	fmt.Println("Database schema migration applied successfully.")
+	applied, err := appliedMigrations(ctx, connection)
+	if err != nil {
+		log.Fatalf("read migration ledger: %v", err)
+	}
+
+	if containsAll(existingTables, applicationTables) &&
+		len(applied) == 0 &&
+		len(migrations) > 0 {
+		if _, err := connection.Exec(
+			ctx,
+			"INSERT INTO schema_migrations (version) VALUES ($1)",
+			migrations[0],
+		); err != nil {
+			log.Fatalf("baseline existing schema: %v", err)
+		}
+		applied[migrations[0]] = struct{}{}
+		fmt.Printf("Baselined existing database at %s.\n", migrations[0])
+	}
+
+	appliedCount := 0
+	for _, migration := range migrations {
+		if _, done := applied[migration]; done {
+			continue
+		}
+		applyMigration(ctx, connection, filepath.Join("db/migrations", migration))
+		appliedCount++
+		fmt.Printf("Applied %s.\n", migration)
+	}
+
+	if appliedCount == 0 {
+		fmt.Println("Database is up to date.")
+	}
 }
 
-func applySQLFile(ctx context.Context, connection *pgx.Conn, path string) {
+func migrationFiles(directory string) ([]string, error) {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return nil, err
+	}
+
+	var migrations []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
+			migrations = append(migrations, entry.Name())
+		}
+	}
+	sort.Strings(migrations)
+	return migrations, nil
+}
+
+func appliedMigrations(
+	ctx context.Context,
+	connection *pgx.Conn,
+) (map[string]struct{}, error) {
+	rows, err := connection.Query(
+		ctx,
+		"SELECT version FROM schema_migrations ORDER BY version",
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	applied := make(map[string]struct{})
+	for rows.Next() {
+		var version string
+		if err := rows.Scan(&version); err != nil {
+			return nil, err
+		}
+		applied[version] = struct{}{}
+	}
+	return applied, rows.Err()
+}
+
+func applyMigration(ctx context.Context, connection *pgx.Conn, path string) {
 	schema, err := os.ReadFile(path)
 	if err != nil {
-		log.Fatalf("read migration file %s: %v", path, err)
+		log.Fatalf("read migration %s: %v", path, err)
 	}
 
 	transaction, err := connection.Begin(ctx)
 	if err != nil {
-		log.Fatalf("begin migration transaction: %v", err)
+		log.Fatalf("begin migration %s: %v", path, err)
 	}
 	defer transaction.Rollback(ctx)
 
 	if _, err := transaction.Exec(ctx, string(schema)); err != nil {
 		log.Fatalf("apply migration %s: %v", path, err)
+	}
+	if _, err := transaction.Exec(
+		ctx,
+		"INSERT INTO schema_migrations (version) VALUES ($1)",
+		filepath.Base(path),
+	); err != nil {
+		log.Fatalf("record migration %s: %v", path, err)
 	}
 	if err := transaction.Commit(ctx); err != nil {
 		log.Fatalf("commit migration %s: %v", path, err)
@@ -121,7 +208,6 @@ func findExistingTables(
 		}
 		tables = append(tables, table)
 	}
-
 	return tables, rows.Err()
 }
 
@@ -134,12 +220,10 @@ func containsAll(existing []string, expected []string) bool {
 	for _, table := range existing {
 		tableSet[table] = struct{}{}
 	}
-
 	for _, table := range expected {
 		if _, found := tableSet[table]; !found {
 			return false
 		}
 	}
-
 	return true
 }

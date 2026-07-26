@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 
+	"gc-go/api/internal/auth"
 	"gc-go/api/internal/db"
 )
 
@@ -35,12 +36,14 @@ func main() {
 	}
 
 	queries := db.New(database)
+	cookieSecure := os.Getenv("APP_ENV") == "production"
 
 	app := fiber.New(fiber.Config{
 		AppName: "gc-go API",
 	})
 
 	api := app.Group("/api")
+	auth.NewHandler(database, queries, cookieSecure).Register(api.Group("/auth"))
 	api.Get("/health", func(c fiber.Ctx) error {
 		started := time.Now()
 		_, databaseError := queries.Ping(c.Context())

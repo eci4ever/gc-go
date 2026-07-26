@@ -90,7 +90,7 @@ type User struct {
 	Image         pgtype.Text
 	CreatedAt     pgtype.Timestamp
 	UpdatedAt     pgtype.Timestamp
-	Role          pgtype.Text
+	Role          string
 	Banned        pgtype.Bool
 	BanReason     pgtype.Text
 	BanExpires    pgtype.Timestamp

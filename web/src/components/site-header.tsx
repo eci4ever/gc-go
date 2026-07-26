@@ -1,9 +1,13 @@
 import { Link } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { Activity } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { sessionQueryOptions } from '@/lib/auth'
 
 export function SiteHeader() {
+  const session = useQuery(sessionQueryOptions)
+
   return (
     <header className="border-b">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
@@ -34,10 +38,16 @@ export function SiteHeader() {
               About
             </Link>
           </nav>
-          <Button variant="ghost" render={<Link to="/login" />}>
-            Log in
-          </Button>
-          <Button render={<Link to="/signup" />}>Sign up</Button>
+          {session.data?.user ? (
+            <Button render={<Link to="/dashboard" />}>Dashboard</Button>
+          ) : (
+            <>
+              <Button variant="ghost" render={<Link to="/login" />}>
+                Log in
+              </Button>
+              <Button render={<Link to="/signup" />}>Sign up</Button>
+            </>
+          )}
         </div>
       </div>
     </header>

@@ -7,7 +7,218 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const createCredentialAccount = `-- name: CreateCredentialAccount :exec
+INSERT INTO accounts (
+    id,
+    account_id,
+    provider_id,
+    user_id,
+    password
+) VALUES (
+    $1,
+    $2,
+    'credential',
+    $3,
+    $4
+)
+`
+
+type CreateCredentialAccountParams struct {
+	ID        string
+	AccountID string
+	UserID    string
+	Password  pgtype.Text
+}
+
+func (q *Queries) CreateCredentialAccount(ctx context.Context, arg CreateCredentialAccountParams) error {
+	_, err := q.db.Exec(ctx, createCredentialAccount,
+		arg.ID,
+		arg.AccountID,
+		arg.UserID,
+		arg.Password,
+	)
+	return err
+}
+
+const createSession = `-- name: CreateSession :exec
+INSERT INTO sessions (
+    id,
+    expires_at,
+    token,
+    ip_address,
+    user_agent,
+    user_id
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6
+)
+`
+
+type CreateSessionParams struct {
+	ID        string
+	ExpiresAt pgtype.Timestamp
+	Token     string
+	IpAddress pgtype.Text
+	UserAgent pgtype.Text
+	UserID    string
+}
+
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) error {
+	_, err := q.db.Exec(ctx, createSession,
+		arg.ID,
+		arg.ExpiresAt,
+		arg.Token,
+		arg.IpAddress,
+		arg.UserAgent,
+		arg.UserID,
+	)
+	return err
+}
+
+const createUser = `-- name: CreateUser :one
+INSERT INTO users (
+    id,
+    name,
+    email
+) VALUES (
+    $1,
+    $2,
+    $3
+)
+RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires
+`
+
+type CreateUserParams struct {
+	ID    string
+	Name  string
+	Email string
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+	row := q.db.QueryRow(ctx, createUser, arg.ID, arg.Name, arg.Email)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Email,
+		&i.EmailVerified,
+		&i.Image,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Role,
+		&i.Banned,
+		&i.BanReason,
+		&i.BanExpires,
+	)
+	return i, err
+}
+
+const deleteSession = `-- name: DeleteSession :exec
+DELETE FROM sessions
+WHERE token = $1
+`
+
+func (q *Queries) DeleteSession(ctx context.Context, token string) error {
+	_, err := q.db.Exec(ctx, deleteSession, token)
+	return err
+}
+
+const getCredentialUserByEmail = `-- name: GetCredentialUserByEmail :one
+SELECT
+    users.id,
+    users.name,
+    users.email,
+    users.email_verified,
+    users.image,
+    users.role,
+    users.banned,
+    users.ban_reason,
+    users.ban_expires,
+    accounts.password
+FROM users
+JOIN accounts ON accounts.user_id = users.id
+WHERE lower(users.email) = lower($1)
+  AND accounts.provider_id = 'credential'
+LIMIT 1
+`
+
+type GetCredentialUserByEmailRow struct {
+	ID            string
+	Name          string
+	Email         string
+	EmailVerified bool
+	Image         pgtype.Text
+	Role          string
+	Banned        pgtype.Bool
+	BanReason     pgtype.Text
+	BanExpires    pgtype.Timestamp
+	Password      pgtype.Text
+}
+
+func (q *Queries) GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error) {
+	row := q.db.QueryRow(ctx, getCredentialUserByEmail, lower)
+	var i GetCredentialUserByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Email,
+		&i.EmailVerified,
+		&i.Image,
+		&i.Role,
+		&i.Banned,
+		&i.BanReason,
+		&i.BanExpires,
+		&i.Password,
+	)
+	return i, err
+}
+
+const getSessionUser = `-- name: GetSessionUser :one
+SELECT
+    users.id,
+    users.name,
+    users.email,
+    users.email_verified,
+    users.image,
+    users.role
+FROM sessions
+JOIN users ON users.id = sessions.user_id
+WHERE sessions.token = $1
+  AND sessions.expires_at > (now() AT TIME ZONE 'UTC')
+  AND coalesce(users.banned, FALSE) = FALSE
+LIMIT 1
+`
+
+type GetSessionUserRow struct {
+	ID            string
+	Name          string
+	Email         string
+	EmailVerified bool
+	Image         pgtype.Text
+	Role          string
+}
+
+func (q *Queries) GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error) {
+	row := q.db.QueryRow(ctx, getSessionUser, token)
+	var i GetSessionUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Email,
+		&i.EmailVerified,
+		&i.Image,
+		&i.Role,
+	)
+	return i, err
+}
 
 const ping = `-- name: Ping :one
 SELECT 1::integer AS value

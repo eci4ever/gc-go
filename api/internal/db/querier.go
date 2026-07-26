@@ -9,6 +9,12 @@ import (
 )
 
 type Querier interface {
+	CreateCredentialAccount(ctx context.Context, arg CreateCredentialAccountParams) error
+	CreateSession(ctx context.Context, arg CreateSessionParams) error
+	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DeleteSession(ctx context.Context, token string) error
+	GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error)
+	GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error)
 	Ping(ctx context.Context) (int32, error)
 }
 

@@ -7,6 +7,7 @@ Type=simple
 User=nmfairus
 WorkingDirectory=/home/nmfairus/gc-go/api
 EnvironmentFile=/home/nmfairus/gc-go/api/.env
+Environment=APP_ENV=production
 ExecStart=/home/nmfairus/gc-go/bin/api
 Restart=on-failure
 RestartSec=3

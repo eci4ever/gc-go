@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Activity,
   ArrowLeft,
@@ -22,11 +24,19 @@ import { Checkbox } from '@/components/ui/checkbox'
 import {
   Field,
   FieldDescription,
+  FieldError,
   FieldGroup,
   FieldLabel,
   FieldSeparator,
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import {
+  login,
+  sessionQueryOptions,
+  signup,
+  type LoginInput,
+  type SignupInput,
+} from '@/lib/auth'
 
 type AuthMode = 'login' | 'signup'
 
@@ -36,10 +46,26 @@ type AuthFormProps = {
 
 export function AuthForm({ mode }: AuthFormProps) {
   const [showPassword, setShowPassword] = useState(false)
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const isLogin = mode === 'login'
+  const authentication = useMutation({
+    mutationFn: (input: LoginInput | SignupInput) =>
+      isLogin ? login(input) : signup(input as SignupInput),
+    onSuccess: async (session) => {
+      queryClient.setQueryData(sessionQueryOptions.queryKey, session)
+      await navigate({ to: '/dashboard' })
+    },
+  })
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    authentication.mutate({
+      ...(isLogin ? {} : { name: String(form.get('name') ?? '') }),
+      email: String(form.get('email') ?? ''),
+      password: String(form.get('password') ?? ''),
+    })
   }
 
   return (
@@ -71,6 +97,9 @@ export function AuthForm({ mode }: AuthFormProps) {
           <CardContent>
             <form onSubmit={handleSubmit}>
               <FieldGroup>
+                {authentication.error && (
+                  <FieldError>{authentication.error.message}</FieldError>
+                )}
                 {!isLogin && (
                   <Field>
                     <FieldLabel htmlFor="name">Name</FieldLabel>
@@ -127,26 +156,33 @@ export function AuthForm({ mode }: AuthFormProps) {
                   )}
                 </Field>
 
-                <Field orientation="horizontal">
-                  <Checkbox
-                    id={isLogin ? 'remember' : 'terms'}
-                    name={isLogin ? 'remember' : 'terms'}
-                    required={!isLogin}
-                  />
-                  <FieldLabel htmlFor={isLogin ? 'remember' : 'terms'}>
-                    {isLogin
-                      ? 'Keep me signed in'
-                      : 'I agree to the terms and privacy policy'}
-                  </FieldLabel>
-                </Field>
+                {!isLogin && (
+                  <Field orientation="horizontal">
+                    <Checkbox id="terms" name="terms" required />
+                    <FieldLabel htmlFor="terms">
+                      I agree to the terms and privacy policy
+                    </FieldLabel>
+                  </Field>
+                )}
 
-                <Button type="submit" size="lg" className="w-full">
+                <Button
+                  type="submit"
+                  size="lg"
+                  className="w-full"
+                  disabled={authentication.isPending}
+                >
                   {isLogin ? (
                     <LogIn data-icon="inline-start" />
                   ) : (
                     <UserPlus data-icon="inline-start" />
                   )}
-                  {isLogin ? 'Log in' : 'Create account'}
+                  {authentication.isPending
+                    ? isLogin
+                      ? 'Logging in…'
+                      : 'Creating account…'
+                    : isLogin
+                      ? 'Log in'
+                      : 'Create account'}
                 </Button>
 
                 <FieldSeparator>or</FieldSeparator>
