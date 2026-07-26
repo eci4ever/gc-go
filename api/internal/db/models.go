@@ -3,3 +3,104 @@
 //   sqlc v1.31.1
 
 package db
+
+import (
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+type Account struct {
+	ID                    string
+	AccountID             string
+	ProviderID            string
+	UserID                string
+	AccessToken           pgtype.Text
+	RefreshToken          pgtype.Text
+	IDToken               pgtype.Text
+	AccessTokenExpiresAt  pgtype.Timestamp
+	RefreshTokenExpiresAt pgtype.Timestamp
+	Scope                 pgtype.Text
+	Password              pgtype.Text
+	CreatedAt             pgtype.Timestamp
+	UpdatedAt             pgtype.Timestamp
+}
+
+type Invitation struct {
+	ID             string
+	OrganizationID string
+	Email          string
+	Role           pgtype.Text
+	TeamID         pgtype.Text
+	Status         string
+	ExpiresAt      pgtype.Timestamp
+	CreatedAt      pgtype.Timestamp
+	InviterID      string
+}
+
+type Member struct {
+	ID             string
+	OrganizationID string
+	UserID         string
+	Role           string
+	CreatedAt      pgtype.Timestamp
+}
+
+type Organization struct {
+	ID        string
+	Name      string
+	Slug      string
+	Logo      pgtype.Text
+	CreatedAt pgtype.Timestamp
+	Metadata  pgtype.Text
+}
+
+type Session struct {
+	ID                   string
+	ExpiresAt            pgtype.Timestamp
+	Token                string
+	CreatedAt            pgtype.Timestamp
+	UpdatedAt            pgtype.Timestamp
+	IpAddress            pgtype.Text
+	UserAgent            pgtype.Text
+	UserID               string
+	ImpersonatedBy       pgtype.Text
+	ActiveOrganizationID pgtype.Text
+	ActiveTeamID         pgtype.Text
+}
+
+type Team struct {
+	ID             string
+	Name           string
+	OrganizationID string
+	CreatedAt      pgtype.Timestamp
+	UpdatedAt      pgtype.Timestamp
+}
+
+type TeamMember struct {
+	ID        string
+	TeamID    string
+	UserID    string
+	CreatedAt pgtype.Timestamp
+}
+
+type User struct {
+	ID            string
+	Name          string
+	Email         string
+	EmailVerified bool
+	Image         pgtype.Text
+	CreatedAt     pgtype.Timestamp
+	UpdatedAt     pgtype.Timestamp
+	Role          pgtype.Text
+	Banned        pgtype.Bool
+	BanReason     pgtype.Text
+	BanExpires    pgtype.Timestamp
+}
+
+type Verification struct {
+	ID         string
+	Identifier string
+	Value      string
+	ExpiresAt  pgtype.Timestamp
+	CreatedAt  pgtype.Timestamp
+	UpdatedAt  pgtype.Timestamp
+}
