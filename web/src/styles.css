@@ -1,24 +1,16 @@
-:root {
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  color: #e5edf7;
-  background: #101827;
-  font-synthesis: none;
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #1e3027;
+  --color-muted: #718178;
+  --color-line: #dfe7df;
+  --color-lime: #d8f36e;
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
-* { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; min-height: 100vh; }
-.shell { width: min(900px, calc(100% - 40px)); margin: 0 auto; }
-header { display: flex; align-items: center; justify-content: space-between; padding: 28px 0; }
-.mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; font-weight: 800; background: #62e7b5; color: #101827; }
-nav { display: flex; gap: 24px; }
-nav a { color: #91a2b8; text-decoration: none; }
-nav a.active { color: #fff; }
-main { padding: 15vh 0 80px; }
-.eyebrow { color: #62e7b5; font-size: .76rem; font-weight: 800; letter-spacing: .18em; }
-h1 { max-width: 720px; margin: 12px 0 18px; font-size: clamp(3rem, 8vw, 6.5rem); line-height: .95; letter-spacing: -.055em; }
-.lede { max-width: 590px; color: #91a2b8; font-size: 1.15rem; line-height: 1.7; }
-.status { display: flex; align-items: center; gap: 14px; width: fit-content; margin-top: 42px; padding: 16px 20px; border: 1px solid #2c3b50; border-radius: 16px; background: #172235; }
-.status div { display: grid; gap: 4px; }
-.status small { color: #91a2b8; }
-.dot { width: 11px; height: 11px; border-radius: 50%; background: #f59e0b; box-shadow: 0 0 15px currentColor; }
-.dot.online { background: #62e7b5; }
+@layer base {
+  body {
+    min-width: 320px;
+    margin: 0;
+  }
+}

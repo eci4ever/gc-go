@@ -42,16 +42,25 @@ func main() {
 
 	api := app.Group("/api")
 	api.Get("/health", func(c fiber.Ctx) error {
-		if _, err := queries.Ping(c.Context()); err != nil {
-			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
-				"status": "error",
-			})
+		started := time.Now()
+		_, databaseError := queries.Ping(c.Context())
+		latency := time.Since(started)
+
+		response := fiber.Map{
+			"status":        "ok",
+			"api":           "ok",
+			"db":            "ok",
+			"db_latency_ms": float64(latency.Microseconds()) / 1000,
+			"time":          time.Now().UTC().Format(time.RFC3339),
 		}
 
-		return c.JSON(fiber.Map{
-			"status": "ok",
-			"time":   time.Now().UTC().Format(time.RFC3339),
-		})
+		if databaseError != nil {
+			response["status"] = "degraded"
+			response["db"] = "error"
+			response["db_latency_ms"] = nil
+		}
+
+		return c.JSON(response)
 	})
 
 	log.Fatal(app.Listen("127.0.0.1:3000"))
