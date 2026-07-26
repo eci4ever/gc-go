@@ -36,6 +36,11 @@ export type SignupInput = LoginInput & {
   name: string
 }
 
+export type UpdateProfileInput = {
+  name: string
+  image: string
+}
+
 export class AuthError extends Error {
   constructor(message: string) {
     super(message)
@@ -60,6 +65,13 @@ export function login(input: LoginInput) {
 export function signup(input: SignupInput) {
   return request<SessionResponse>('/api/auth/signup', {
     method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function updateProfile(input: UpdateProfileInput) {
+  return request<SessionResponse>('/api/auth/profile', {
+    method: 'PUT',
     body: JSON.stringify(input),
   })
 }

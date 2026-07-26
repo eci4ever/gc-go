@@ -272,3 +272,38 @@ func (q *Queries) Ping(ctx context.Context) (int32, error) {
 	err := row.Scan(&value)
 	return value, err
 }
+
+const updateUserProfile = `-- name: UpdateUserProfile :one
+UPDATE users
+SET
+    name = $2,
+    image = $3,
+    updated_at = (now() AT TIME ZONE 'UTC')
+WHERE id = $1
+RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires
+`
+
+type UpdateUserProfileParams struct {
+	ID    string
+	Name  string
+	Image pgtype.Text
+}
+
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserProfile, arg.ID, arg.Name, arg.Image)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Email,
+		&i.EmailVerified,
+		&i.Image,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Role,
+		&i.Banned,
+		&i.BanReason,
+		&i.BanExpires,
+	)
+	return i, err
+}

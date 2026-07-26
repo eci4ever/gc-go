@@ -1,174 +1,35 @@
-"use client"
+import * as React from 'react'
+import { Link, useRouterState } from '@tanstack/react-router'
+import { LayoutDashboardIcon, UserRoundIcon } from 'lucide-react'
 
-import * as React from "react"
-
-import type { AuthUser } from "@/lib/auth"
-import { NavMain } from "@/components/nav-main"
-import { NavProjects } from "@/components/nav-projects"
-import { NavUser } from "@/components/nav-user"
-import { TeamSwitcher } from "@/components/team-switcher"
+import type { AuthUser } from '@/lib/auth'
+import { NavUser } from '@/components/nav-user'
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
   SidebarRail,
-} from "@/components/ui/sidebar"
-import { GalleryVerticalEndIcon, AudioLinesIcon, TerminalIcon, TerminalSquareIcon, BotIcon, BookOpenIcon, Settings2Icon, FrameIcon, PieChartIcon, MapIcon } from "lucide-react"
+} from '@/components/ui/sidebar'
 
-const data = {
-  teams: [
-    {
-      name: "Acme Inc",
-      logo: (
-        <GalleryVerticalEndIcon
-        />
-      ),
-      plan: "Enterprise",
-    },
-    {
-      name: "Acme Corp.",
-      logo: (
-        <AudioLinesIcon
-        />
-      ),
-      plan: "Startup",
-    },
-    {
-      name: "Evil Corp.",
-      logo: (
-        <TerminalIcon
-        />
-      ),
-      plan: "Free",
-    },
-  ],
-  navMain: [
-    {
-      title: "Playground",
-      url: "#",
-      icon: (
-        <TerminalSquareIcon
-        />
-      ),
-      isActive: true,
-      items: [
-        {
-          title: "History",
-          url: "#",
-        },
-        {
-          title: "Starred",
-          url: "#",
-        },
-        {
-          title: "Settings",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Models",
-      url: "#",
-      icon: (
-        <BotIcon
-        />
-      ),
-      items: [
-        {
-          title: "Genesis",
-          url: "#",
-        },
-        {
-          title: "Explorer",
-          url: "#",
-        },
-        {
-          title: "Quantum",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Documentation",
-      url: "#",
-      icon: (
-        <BookOpenIcon
-        />
-      ),
-      items: [
-        {
-          title: "Introduction",
-          url: "#",
-        },
-        {
-          title: "Get Started",
-          url: "#",
-        },
-        {
-          title: "Tutorials",
-          url: "#",
-        },
-        {
-          title: "Changelog",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Settings",
-      url: "#",
-      icon: (
-        <Settings2Icon
-        />
-      ),
-      items: [
-        {
-          title: "General",
-          url: "#",
-        },
-        {
-          title: "Team",
-          url: "#",
-        },
-        {
-          title: "Billing",
-          url: "#",
-        },
-        {
-          title: "Limits",
-          url: "#",
-        },
-      ],
-    },
-  ],
-  projects: [
-    {
-      name: "Design Engineering",
-      url: "#",
-      icon: (
-        <FrameIcon
-        />
-      ),
-    },
-    {
-      name: "Sales & Marketing",
-      url: "#",
-      icon: (
-        <PieChartIcon
-        />
-      ),
-    },
-    {
-      name: "Travel",
-      url: "#",
-      icon: (
-        <MapIcon
-        />
-      ),
-    },
-  ],
-}
+const navigation = [
+  {
+    title: 'Dashboard',
+    to: '/dashboard' as const,
+    icon: LayoutDashboardIcon,
+  },
+  {
+    title: 'Account',
+    to: '/account' as const,
+    icon: UserRoundIcon,
+  },
+]
 
 export function AppSidebar({
   user,
@@ -180,14 +41,47 @@ export function AppSidebar({
   onLogout: () => void
   loggingOut: boolean
 }) {
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  })
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" render={<Link to="/dashboard" />}>
+              <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                GC
+              </div>
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-semibold">GC Go</span>
+                <span className="truncate text-xs">Workspace</span>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
-        <NavProjects projects={data.projects} />
+        <SidebarGroup>
+          <SidebarGroupLabel>Menu</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {navigation.map((item) => (
+                <SidebarMenuItem key={item.to}>
+                  <SidebarMenuButton
+                    isActive={pathname === item.to}
+                    tooltip={item.title}
+                    render={<Link to={item.to} />}
+                  >
+                    <item.icon />
+                    <span>{item.title}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
         <NavUser

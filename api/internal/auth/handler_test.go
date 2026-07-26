@@ -46,3 +46,21 @@ func TestSessionTokenIsHashed(t *testing.T) {
 		t.Fatal("stored token hash does not match the cookie token")
 	}
 }
+
+func TestValidImageURL(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]bool{
+		"https://example.com/avatar.jpg": true,
+		"http://localhost/avatar.png":    true,
+		"":                               false,
+		"javascript:alert(1)":            false,
+		"/relative/avatar.png":           false,
+	}
+
+	for value, expected := range tests {
+		if actual := validImageURL(value); actual != expected {
+			t.Errorf("validImageURL(%q) = %t, want %t", value, actual, expected)
+		}
+	}
+}

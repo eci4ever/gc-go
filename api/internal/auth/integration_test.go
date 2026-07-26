@@ -106,6 +106,34 @@ func TestAuthFlowIntegration(t *testing.T) {
 		t.Fatal("session lookup did not return the active session")
 	}
 
+	profileResponse := authRequest(
+		t,
+		app,
+		http.MethodPut,
+		"/api/auth/profile",
+		map[string]string{
+			"name":  "Updated Auth Test",
+			"image": "https://example.com/avatar.png",
+		},
+		cookies[0],
+	)
+	if profileResponse.StatusCode != http.StatusOK {
+		t.Fatalf("profile status = %d, want %d", profileResponse.StatusCode, http.StatusOK)
+	}
+	var profileBody struct {
+		Session sessionResponse `json:"session"`
+		User    userResponse    `json:"user"`
+	}
+	decodeResponse(t, profileResponse, &profileBody)
+	if profileBody.User.Name != "Updated Auth Test" ||
+		profileBody.User.Image == nil ||
+		*profileBody.User.Image != "https://example.com/avatar.png" {
+		t.Fatal("profile update did not return the updated name and image")
+	}
+	if profileBody.User.Email != signupBody.User.Email {
+		t.Fatal("profile update changed the user's email")
+	}
+
 	logoutResponse := authRequest(
 		t,
 		app,

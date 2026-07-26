@@ -16,6 +16,7 @@ type Querier interface {
 	GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error)
 	GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error)
 	Ping(ctx context.Context) (int32, error)
+	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)

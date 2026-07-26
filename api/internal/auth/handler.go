@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/mail"
+	"net/url"
 	"strings"
 	"time"
 
@@ -35,6 +36,11 @@ type credentialsRequest struct {
 	Name     string `json:"name"`
 	Email    string `json:"email"`
 	Password string `json:"password"`
+}
+
+type updateProfileRequest struct {
+	Name  string `json:"name"`
+	Image string `json:"image"`
 }
 
 type userResponse struct {
@@ -76,6 +82,7 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Post("/login", h.login)
 	router.Post("/logout", h.logout)
 	router.Get("/session", h.session)
+	router.Put("/profile", h.updateProfile)
 }
 
 func (h *Handler) signup(c fiber.Ctx) error {
@@ -263,6 +270,57 @@ func (h *Handler) logout(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+func (h *Handler) updateProfile(c fiber.Ctx) error {
+	session, ok, err := h.currentSession(c)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to read session")
+	}
+	if !ok {
+		h.clearSessionCookie(c)
+		return jsonError(c, fiber.StatusUnauthorized, "Authentication required")
+	}
+
+	var request updateProfileRequest
+	if err := c.Bind().Body(&request); err != nil {
+		return jsonError(c, fiber.StatusBadRequest, "Invalid request body")
+	}
+	request.Name = strings.TrimSpace(request.Name)
+	request.Image = strings.TrimSpace(request.Image)
+	if request.Name == "" || len(request.Name) > 100 {
+		return jsonError(c, fiber.StatusBadRequest, "Name must be between 1 and 100 characters")
+	}
+	if request.Image != "" && !validImageURL(request.Image) {
+		return jsonError(c, fiber.StatusBadRequest, "Image must be a valid HTTP or HTTPS URL")
+	}
+
+	user, err := h.queries.UpdateUserProfile(c.Context(), db.UpdateUserProfileParams{
+		ID:    session.UserID,
+		Name:  request.Name,
+		Image: textValue(request.Image),
+	})
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to update profile")
+	}
+
+	return c.JSON(fiber.Map{
+		"session": sessionFromRow(session),
+		"user":    userFromModel(user),
+	})
+}
+
+func (h *Handler) currentSession(c fiber.Ctx) (db.GetSessionUserRow, bool, error) {
+	rawToken := c.Cookies(sessionCookieName)
+	if rawToken == "" {
+		return db.GetSessionUserRow{}, false, nil
+	}
+
+	session, err := h.queries.GetSessionUser(c.Context(), hashToken(rawToken))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return db.GetSessionUserRow{}, false, nil
+	}
+	return session, err == nil, err
+}
+
 func (h *Handler) setSessionCookie(
 	c fiber.Ctx,
 	token string,
@@ -334,6 +392,13 @@ func hashToken(token string) string {
 func validEmail(value string) bool {
 	address, err := mail.ParseAddress(value)
 	return err == nil && strings.EqualFold(address.Address, value)
+}
+
+func validImageURL(value string) bool {
+	imageURL, err := url.ParseRequestURI(value)
+	return err == nil &&
+		(imageURL.Scheme == "http" || imageURL.Scheme == "https") &&
+		imageURL.Host != ""
 }
 
 func isUniqueViolation(err error) bool {

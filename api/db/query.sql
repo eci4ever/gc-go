@@ -91,3 +91,12 @@ LIMIT 1;
 -- name: DeleteSession :exec
 DELETE FROM sessions
 WHERE token = $1;
+
+-- name: UpdateUserProfile :one
+UPDATE users
+SET
+    name = $2,
+    image = $3,
+    updated_at = (now() AT TIME ZONE 'UTC')
+WHERE id = $1
+RETURNING *;
