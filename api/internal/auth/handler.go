@@ -196,6 +196,7 @@ func (h *Handler) signup(c fiber.Ctx) error {
 	}
 
 	h.setSessionCookie(c, rawToken, expiresAt)
+	h.recordAuthEvent(c, userID, "account_created")
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"session": sessionFromModel(session),
 		"user":    userFromModel(user),
@@ -276,6 +277,7 @@ func (h *Handler) login(c fiber.Ctx) error {
 	}
 
 	h.setSessionCookie(c, rawToken, expiresAt)
+	h.recordAuthEvent(c, user.ID, "login_success")
 	return c.JSON(fiber.Map{
 		"session": sessionFromModel(session),
 		"user":    userFromCredentialRow(user),
@@ -437,6 +439,7 @@ func (h *Handler) changePassword(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to change password")
 	}
 
+	h.recordAuthEvent(c, session.UserID, "password_changed")
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -495,6 +498,7 @@ func (h *Handler) revokeSession(c fiber.Ctx) error {
 		}
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to revoke session")
 	}
+	h.recordAuthEvent(c, current.UserID, "session_revoked")
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -517,7 +521,22 @@ func (h *Handler) revokeOtherSessions(c fiber.Ctx) error {
 	); err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to revoke sessions")
 	}
+	h.recordAuthEvent(c, current.UserID, "sessions_bulk_revoked")
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *Handler) recordAuthEvent(c fiber.Ctx, userID, eventType string) {
+	eventID, err := randomValue(18)
+	if err != nil {
+		return
+	}
+	_ = h.queries.CreateAuthEvent(c.Context(), db.CreateAuthEventParams{
+		ID:        eventID,
+		UserID:    userID,
+		EventType: eventType,
+		IpAddress: textValue(c.IP()),
+		UserAgent: textValue(c.Get("User-Agent")),
+	})
 }
 
 func (h *Handler) currentSession(c fiber.Ctx) (db.GetSessionUserRow, bool, error) {

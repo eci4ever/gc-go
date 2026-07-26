@@ -43,7 +43,9 @@ func main() {
 	})
 
 	api := app.Group("/api")
-	auth.NewHandler(database, queries, cookieSecure).Register(api.Group("/auth"))
+	authHandler := auth.NewHandler(database, queries, cookieSecure)
+	authHandler.Register(api.Group("/auth"))
+	authHandler.RegisterDashboard(api)
 	api.Get("/health", func(c fiber.Ctx) error {
 		started := time.Now()
 		_, databaseError := queries.Ping(c.Context())

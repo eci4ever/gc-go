@@ -227,3 +227,41 @@ WHERE id = $1
   AND user_id = $2
   AND token <> $3
 RETURNING id;
+
+-- name: CreateAuthEvent :exec
+INSERT INTO auth_events (
+    id,
+    user_id,
+    event_type,
+    ip_address,
+    user_agent
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5
+);
+
+-- name: CountActiveUserSessions :one
+SELECT count(*)::integer
+FROM sessions
+WHERE user_id = $1
+  AND expires_at > (now() AT TIME ZONE 'UTC');
+
+-- name: GetUserSignInActivity :many
+SELECT
+    days.day::date AS day,
+    count(auth_events.id)::integer AS sign_ins
+FROM generate_series(
+    ((now() AT TIME ZONE 'UTC')::date - interval '13 days')::date,
+    (now() AT TIME ZONE 'UTC')::date,
+    interval '1 day'
+) AS days(day)
+LEFT JOIN auth_events
+    ON auth_events.user_id = $1
+   AND auth_events.event_type IN ('login_success', 'two_factor_success')
+   AND auth_events.created_at >= days.day
+   AND auth_events.created_at < days.day + interval '1 day'
+GROUP BY days.day
+ORDER BY days.day;

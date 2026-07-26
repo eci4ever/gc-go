@@ -11,6 +11,8 @@ import (
 )
 
 type Querier interface {
+	CountActiveUserSessions(ctx context.Context, userID string) (int32, error)
+	CreateAuthEvent(ctx context.Context, arg CreateAuthEventParams) error
 	CreateCredentialAccount(ctx context.Context, arg CreateCredentialAccountParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTwoFactorChallenge(ctx context.Context, arg CreateTwoFactorChallengeParams) error
@@ -25,6 +27,7 @@ type Querier interface {
 	GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error)
 	GetTwoFactorByUserID(ctx context.Context, userID string) (TwoFactor, error)
 	GetTwoFactorChallenge(ctx context.Context, token string) (GetTwoFactorChallengeRow, error)
+	GetUserSignInActivity(ctx context.Context, userID string) ([]GetUserSignInActivityRow, error)
 	ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error)
 	Ping(ctx context.Context) (int32, error)
 	RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) (string, error)

@@ -24,6 +24,15 @@ type Account struct {
 	UpdatedAt             pgtype.Timestamp
 }
 
+type AuthEvent struct {
+	ID        string
+	UserID    string
+	EventType string
+	IpAddress pgtype.Text
+	UserAgent pgtype.Text
+	CreatedAt pgtype.Timestamp
+}
+
 type Invitation struct {
 	ID             string
 	OrganizationID string

@@ -56,7 +56,9 @@ func TestAuthFlowIntegration(t *testing.T) {
 	})
 
 	app := fiber.New()
-	NewHandler(pool, db.New(pool), false).Register(app.Group("/api/auth"))
+	handler := NewHandler(pool, db.New(pool), false)
+	handler.Register(app.Group("/api/auth"))
+	handler.RegisterDashboard(app.Group("/api"))
 
 	signupResponse := authRequest(t, app, http.MethodPost, "/api/auth/signup", map[string]string{
 		"name":     "Auth Smoke Test",
@@ -229,6 +231,35 @@ func TestAuthFlowIntegration(t *testing.T) {
 	decodeResponse(t, sessionsResponse, &sessionsBody)
 	if len(sessionsBody.Sessions) != 1 || !sessionsBody.Sessions[0].Current {
 		t.Fatal("bulk revoke did not preserve only the current session")
+	}
+
+	dashboardResponse := authRequest(
+		t,
+		app,
+		http.MethodGet,
+		"/api/dashboard",
+		nil,
+		cookies[0],
+	)
+	if dashboardResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"dashboard status = %d, want %d",
+			dashboardResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	var dashboardBody struct {
+		SecurityScore  int                      `json:"securityScore"`
+		ActiveSessions int32                    `json:"activeSessions"`
+		SignInActivity []signInActivityResponse `json:"signInActivity"`
+		RecentSessions []managedSessionResponse `json:"recentSessions"`
+	}
+	decodeResponse(t, dashboardResponse, &dashboardBody)
+	if dashboardBody.SecurityScore != 30 ||
+		dashboardBody.ActiveSessions != 1 ||
+		len(dashboardBody.SignInActivity) != 14 ||
+		len(dashboardBody.RecentSessions) != 1 {
+		t.Fatal("dashboard summary did not return the expected security data")
 	}
 
 	profileResponse := authRequest(

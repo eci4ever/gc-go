@@ -37,7 +37,11 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
-      include: ['src/lib/auth.ts', 'src/components/auth-form.tsx'],
+      include: [
+        'src/lib/auth.ts',
+        'src/lib/dashboard.ts',
+        'src/components/auth-form.tsx',
+      ],
     },
   },
 })

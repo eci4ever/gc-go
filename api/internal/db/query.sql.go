@@ -11,6 +11,55 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countActiveUserSessions = `-- name: CountActiveUserSessions :one
+SELECT count(*)::integer
+FROM sessions
+WHERE user_id = $1
+  AND expires_at > (now() AT TIME ZONE 'UTC')
+`
+
+func (q *Queries) CountActiveUserSessions(ctx context.Context, userID string) (int32, error) {
+	row := q.db.QueryRow(ctx, countActiveUserSessions, userID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const createAuthEvent = `-- name: CreateAuthEvent :exec
+INSERT INTO auth_events (
+    id,
+    user_id,
+    event_type,
+    ip_address,
+    user_agent
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5
+)
+`
+
+type CreateAuthEventParams struct {
+	ID        string
+	UserID    string
+	EventType string
+	IpAddress pgtype.Text
+	UserAgent pgtype.Text
+}
+
+func (q *Queries) CreateAuthEvent(ctx context.Context, arg CreateAuthEventParams) error {
+	_, err := q.db.Exec(ctx, createAuthEvent,
+		arg.ID,
+		arg.UserID,
+		arg.EventType,
+		arg.IpAddress,
+		arg.UserAgent,
+	)
+	return err
+}
+
 const createCredentialAccount = `-- name: CreateCredentialAccount :exec
 INSERT INTO accounts (
     id,
@@ -436,6 +485,49 @@ func (q *Queries) GetTwoFactorChallenge(ctx context.Context, token string) (GetT
 		&i.Role,
 	)
 	return i, err
+}
+
+const getUserSignInActivity = `-- name: GetUserSignInActivity :many
+SELECT
+    days.day::date AS day,
+    count(auth_events.id)::integer AS sign_ins
+FROM generate_series(
+    ((now() AT TIME ZONE 'UTC')::date - interval '13 days')::date,
+    (now() AT TIME ZONE 'UTC')::date,
+    interval '1 day'
+) AS days(day)
+LEFT JOIN auth_events
+    ON auth_events.user_id = $1
+   AND auth_events.event_type IN ('login_success', 'two_factor_success')
+   AND auth_events.created_at >= days.day
+   AND auth_events.created_at < days.day + interval '1 day'
+GROUP BY days.day
+ORDER BY days.day
+`
+
+type GetUserSignInActivityRow struct {
+	Day     pgtype.Date
+	SignIns int32
+}
+
+func (q *Queries) GetUserSignInActivity(ctx context.Context, userID string) ([]GetUserSignInActivityRow, error) {
+	rows, err := q.db.Query(ctx, getUserSignInActivity, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserSignInActivityRow
+	for rows.Next() {
+		var i GetUserSignInActivityRow
+		if err := rows.Scan(&i.Day, &i.SignIns); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listUserSessions = `-- name: ListUserSessions :many

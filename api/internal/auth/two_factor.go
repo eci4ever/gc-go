@@ -135,6 +135,7 @@ func (h *Handler) enableTwoFactor(c fiber.Ctx) error {
 	}); err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to enable two-factor authentication")
 	}
+	h.recordAuthEvent(c, session.UserID, "two_factor_enabled")
 	return c.JSON(fiber.Map{"recoveryCodes": codes})
 }
 
@@ -164,6 +165,7 @@ func (h *Handler) disableTwoFactor(c fiber.Ctx) error {
 	if err := h.queries.DeleteTwoFactor(c.Context(), session.UserID); err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to disable two-factor authentication")
 	}
+	h.recordAuthEvent(c, session.UserID, "two_factor_disabled")
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -225,6 +227,7 @@ func (h *Handler) verifyTwoFactorLogin(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to log in")
 	}
 	h.setSessionCookie(c, rawToken, expiresAt)
+	h.recordAuthEvent(c, challenge.UserID, "two_factor_success")
 	return c.JSON(fiber.Map{
 		"session": sessionFromModel(session),
 		"user": userResponse{
