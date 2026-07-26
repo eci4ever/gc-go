@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import {
@@ -7,7 +7,10 @@ import {
   CircleAlertIcon,
   KeyRoundIcon,
   Loader2Icon,
+  MonitorSmartphoneIcon,
   SaveIcon,
+  ShieldCheckIcon,
+  Trash2Icon,
 } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -38,9 +41,13 @@ import {
 import { Input } from '@/components/ui/input'
 import {
   changePassword,
+  revokeOtherSessions,
+  revokeSession,
   sessionQueryOptions,
   updateProfile,
+  userSessionsQueryOptions,
   type ChangePasswordInput,
+  type ManagedSession,
   type UpdateProfileInput,
 } from '@/lib/auth'
 
@@ -52,8 +59,12 @@ function Account() {
   const { user } = Route.useRouteContext()
   const [image, setImage] = useState(user.image ?? '')
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
+  const [revokeTarget, setRevokeTarget] = useState<
+    ManagedSession | 'others' | null
+  >(null)
   const queryClient = useQueryClient()
   const router = useRouter()
+  const sessionsQuery = useQuery(userSessionsQueryOptions)
   const profileMutation = useMutation({
     mutationFn: (input: UpdateProfileInput) => updateProfile(input),
     onSuccess: async (session) => {
@@ -65,9 +76,30 @@ function Account() {
   })
   const passwordMutation = useMutation({
     mutationFn: (input: ChangePasswordInput) => changePassword(input),
-    onSuccess: () => {
+    onSuccess: async () => {
       setPasswordDialogOpen(false)
+      await queryClient.invalidateQueries({
+        queryKey: userSessionsQueryOptions.queryKey,
+      })
       toast.success('Password changed successfully')
+    },
+    onError: (error) => toast.error(error.message),
+  })
+  const revokeMutation = useMutation({
+    mutationFn: (target: ManagedSession | 'others') =>
+      target === 'others'
+        ? revokeOtherSessions()
+        : revokeSession(target.id),
+    onSuccess: async (_, target) => {
+      setRevokeTarget(null)
+      await queryClient.invalidateQueries({
+        queryKey: userSessionsQueryOptions.queryKey,
+      })
+      toast.success(
+        target === 'others'
+          ? 'Other sessions revoked'
+          : 'Session revoked',
+      )
     },
     onError: (error) => toast.error(error.message),
   })
@@ -287,6 +319,156 @@ function Account() {
           </Dialog>
         </CardContent>
       </Card>
+
+      <Card className="w-full max-w-2xl">
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>Active sessions</CardTitle>
+              <CardDescription>
+                Review devices signed in to your account and revoke access.
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={
+                !sessionsQuery.data?.sessions.some((session) => !session.current)
+              }
+              onClick={() => setRevokeTarget('others')}
+            >
+              <Trash2Icon />
+              Revoke all others
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {sessionsQuery.isPending && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2Icon className="size-4 animate-spin" />
+              Loading sessions…
+            </div>
+          )}
+          {sessionsQuery.error && (
+            <p className="text-sm text-destructive">
+              {sessionsQuery.error.message}
+            </p>
+          )}
+          {sessionsQuery.data && (
+            <div className="divide-y">
+              {sessionsQuery.data.sessions.map((session) => (
+                <SessionItem
+                  key={session.id}
+                  session={session}
+                  onRevoke={() => setRevokeTarget(session)}
+                />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={revokeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !revokeMutation.isPending) setRevokeTarget(null)
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {revokeTarget === 'others'
+                ? 'Revoke all other sessions?'
+                : 'Revoke this session?'}
+            </DialogTitle>
+            <DialogDescription>
+              {revokeTarget === 'others'
+                ? 'Every device except this one will be signed out immediately.'
+                : 'This device will be signed out and will need to log in again.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRevokeTarget(null)}
+              disabled={revokeMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={revokeMutation.isPending || revokeTarget === null}
+              onClick={() => {
+                if (revokeTarget) revokeMutation.mutate(revokeTarget)
+              }}
+            >
+              {revokeMutation.isPending ? (
+                <Loader2Icon className="animate-spin" />
+              ) : (
+                <Trash2Icon />
+              )}
+              {revokeMutation.isPending ? 'Revoking…' : 'Revoke'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
+}
+
+function SessionItem({
+  session,
+  onRevoke,
+}: {
+  session: ManagedSession
+  onRevoke: () => void
+}) {
+  return (
+    <div className="flex items-start gap-3 py-4 first:pt-0 last:pb-0">
+      <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center bg-muted">
+        <MonitorSmartphoneIcon className="size-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate text-sm font-medium">
+            {session.userAgent || 'Unknown device'}
+          </p>
+          {session.current && (
+            <Badge>
+              <ShieldCheckIcon />
+              Current
+            </Badge>
+          )}
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {session.ipAddress || 'Unknown IP'} · Signed in{' '}
+          {formatSessionDate(session.createdAt)}
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Expires {formatSessionDate(session.expiresAt)}
+        </p>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={
+          session.current ? 'Current session is protected' : 'Revoke session'
+        }
+        title={
+          session.current ? 'Current session is protected' : 'Revoke session'
+        }
+        disabled={session.current}
+        onClick={onRevoke}
+      >
+        {session.current ? <ShieldCheckIcon /> : <Trash2Icon />}
+      </Button>
+    </div>
+  )
+}
+
+function formatSessionDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
 }

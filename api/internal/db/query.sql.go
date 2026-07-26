@@ -293,6 +293,76 @@ func (q *Queries) GetSessionUser(ctx context.Context, token string) (GetSessionU
 	return i, err
 }
 
+const listUserSessions = `-- name: ListUserSessions :many
+SELECT
+    id,
+    expires_at,
+    created_at,
+    updated_at,
+    ip_address,
+    user_agent,
+    user_id,
+    impersonated_by,
+    active_organization_id,
+    active_team_id,
+    token = $2 AS is_current
+FROM sessions
+WHERE user_id = $1
+  AND expires_at > (now() AT TIME ZONE 'UTC')
+ORDER BY created_at DESC
+`
+
+type ListUserSessionsParams struct {
+	UserID string
+	Token  string
+}
+
+type ListUserSessionsRow struct {
+	ID                   string
+	ExpiresAt            pgtype.Timestamp
+	CreatedAt            pgtype.Timestamp
+	UpdatedAt            pgtype.Timestamp
+	IpAddress            pgtype.Text
+	UserAgent            pgtype.Text
+	UserID               string
+	ImpersonatedBy       pgtype.Text
+	ActiveOrganizationID pgtype.Text
+	ActiveTeamID         pgtype.Text
+	IsCurrent            bool
+}
+
+func (q *Queries) ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error) {
+	rows, err := q.db.Query(ctx, listUserSessions, arg.UserID, arg.Token)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserSessionsRow
+	for rows.Next() {
+		var i ListUserSessionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.IpAddress,
+			&i.UserAgent,
+			&i.UserID,
+			&i.ImpersonatedBy,
+			&i.ActiveOrganizationID,
+			&i.ActiveTeamID,
+			&i.IsCurrent,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const ping = `-- name: Ping :one
 SELECT 1::integer AS value
 `
@@ -302,6 +372,27 @@ func (q *Queries) Ping(ctx context.Context) (int32, error) {
 	var value int32
 	err := row.Scan(&value)
 	return value, err
+}
+
+const revokeUserSession = `-- name: RevokeUserSession :one
+DELETE FROM sessions
+WHERE id = $1
+  AND user_id = $2
+  AND token <> $3
+RETURNING id
+`
+
+type RevokeUserSessionParams struct {
+	ID     string
+	UserID string
+	Token  string
+}
+
+func (q *Queries) RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) (string, error) {
+	row := q.db.QueryRow(ctx, revokeUserSession, arg.ID, arg.UserID, arg.Token)
+	var id string
+	err := row.Scan(&id)
+	return id, err
 }
 
 const updateCredentialPassword = `-- name: UpdateCredentialPassword :exec

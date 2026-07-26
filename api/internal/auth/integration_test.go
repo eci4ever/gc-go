@@ -106,6 +106,130 @@ func TestAuthFlowIntegration(t *testing.T) {
 		t.Fatal("session lookup did not return the active session")
 	}
 
+	secondLoginResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/login",
+		map[string]string{
+			"email":    email,
+			"password": "correct-horse-battery-staple",
+		},
+		nil,
+	)
+	if secondLoginResponse.StatusCode != http.StatusOK {
+		t.Fatalf("second login status = %d, want %d", secondLoginResponse.StatusCode, http.StatusOK)
+	}
+	secondCookies := secondLoginResponse.Cookies()
+	secondLoginResponse.Body.Close()
+	if len(secondCookies) == 0 {
+		t.Fatal("second login did not set a session cookie")
+	}
+
+	sessionsResponse := authRequest(
+		t,
+		app,
+		http.MethodGet,
+		"/api/auth/sessions",
+		nil,
+		cookies[0],
+	)
+	if sessionsResponse.StatusCode != http.StatusOK {
+		t.Fatalf("sessions status = %d, want %d", sessionsResponse.StatusCode, http.StatusOK)
+	}
+	var sessionsBody struct {
+		Sessions []managedSessionResponse `json:"sessions"`
+	}
+	decodeResponse(t, sessionsResponse, &sessionsBody)
+	if len(sessionsBody.Sessions) != 2 {
+		t.Fatalf("sessions count = %d, want 2", len(sessionsBody.Sessions))
+	}
+	var otherSessionID string
+	for _, activeSession := range sessionsBody.Sessions {
+		if !activeSession.Current {
+			otherSessionID = activeSession.ID
+		}
+	}
+	if otherSessionID == "" {
+		t.Fatal("sessions list did not identify the other session")
+	}
+
+	currentRevokeResponse := authRequest(
+		t,
+		app,
+		http.MethodDelete,
+		"/api/auth/sessions/"+signupBody.Session.ID,
+		nil,
+		cookies[0],
+	)
+	if currentRevokeResponse.StatusCode != http.StatusBadRequest {
+		t.Fatalf(
+			"current revoke status = %d, want %d",
+			currentRevokeResponse.StatusCode,
+			http.StatusBadRequest,
+		)
+	}
+	currentRevokeResponse.Body.Close()
+
+	revokeResponse := authRequest(
+		t,
+		app,
+		http.MethodDelete,
+		"/api/auth/sessions/"+otherSessionID,
+		nil,
+		cookies[0],
+	)
+	if revokeResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("revoke status = %d, want %d", revokeResponse.StatusCode, http.StatusNoContent)
+	}
+	revokeResponse.Body.Close()
+
+	thirdLoginResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/login",
+		map[string]string{
+			"email":    email,
+			"password": "correct-horse-battery-staple",
+		},
+		nil,
+	)
+	if thirdLoginResponse.StatusCode != http.StatusOK {
+		t.Fatalf("third login status = %d, want %d", thirdLoginResponse.StatusCode, http.StatusOK)
+	}
+	thirdLoginResponse.Body.Close()
+
+	bulkRevokeResponse := authRequest(
+		t,
+		app,
+		http.MethodDelete,
+		"/api/auth/sessions",
+		nil,
+		cookies[0],
+	)
+	if bulkRevokeResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"bulk revoke status = %d, want %d",
+			bulkRevokeResponse.StatusCode,
+			http.StatusNoContent,
+		)
+	}
+	bulkRevokeResponse.Body.Close()
+
+	sessionsResponse = authRequest(
+		t,
+		app,
+		http.MethodGet,
+		"/api/auth/sessions",
+		nil,
+		cookies[0],
+	)
+	decodeResponse(t, sessionsResponse, &sessionsBody)
+	if len(sessionsBody.Sessions) != 1 || !sessionsBody.Sessions[0].Current {
+		t.Fatal("bulk revoke did not preserve only the current session")
+	}
+
 	profileResponse := authRequest(
 		t,
 		app,

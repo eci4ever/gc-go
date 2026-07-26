@@ -70,6 +70,11 @@ type sessionResponse struct {
 	ActiveTeamID         *string   `json:"activeTeamId"`
 }
 
+type managedSessionResponse struct {
+	sessionResponse
+	Current bool `json:"current"`
+}
+
 func NewHandler(
 	pool *pgxpool.Pool,
 	queries *db.Queries,
@@ -89,6 +94,9 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Get("/session", h.session)
 	router.Put("/profile", h.updateProfile)
 	router.Put("/password", h.changePassword)
+	router.Get("/sessions", h.listSessions)
+	router.Delete("/sessions", h.revokeOtherSessions)
+	router.Delete("/sessions/:id", h.revokeSession)
 }
 
 func (h *Handler) signup(c fiber.Ctx) error {
@@ -402,6 +410,86 @@ func (h *Handler) changePassword(c fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
+func (h *Handler) listSessions(c fiber.Ctx) error {
+	current, ok, err := h.currentSession(c)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to read sessions")
+	}
+	if !ok {
+		h.clearSessionCookie(c)
+		return jsonError(c, fiber.StatusUnauthorized, "Authentication required")
+	}
+
+	sessions, err := h.queries.ListUserSessions(
+		c.Context(),
+		db.ListUserSessionsParams{
+			UserID: current.UserID,
+			Token:  hashToken(c.Cookies(sessionCookieName)),
+		},
+	)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to read sessions")
+	}
+
+	response := make([]managedSessionResponse, 0, len(sessions))
+	for _, session := range sessions {
+		response = append(response, managedSessionFromRow(session))
+	}
+	return c.JSON(fiber.Map{"sessions": response})
+}
+
+func (h *Handler) revokeSession(c fiber.Ctx) error {
+	current, ok, err := h.currentSession(c)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to revoke session")
+	}
+	if !ok {
+		h.clearSessionCookie(c)
+		return jsonError(c, fiber.StatusUnauthorized, "Authentication required")
+	}
+
+	sessionID := c.Params("id")
+	if sessionID == current.SessionID {
+		return jsonError(c, fiber.StatusBadRequest, "The current session cannot be revoked")
+	}
+	if _, err := h.queries.RevokeUserSession(
+		c.Context(),
+		db.RevokeUserSessionParams{
+			ID:     sessionID,
+			UserID: current.UserID,
+			Token:  hashToken(c.Cookies(sessionCookieName)),
+		},
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return jsonError(c, fiber.StatusNotFound, "Session not found")
+		}
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to revoke session")
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *Handler) revokeOtherSessions(c fiber.Ctx) error {
+	current, ok, err := h.currentSession(c)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to revoke sessions")
+	}
+	if !ok {
+		h.clearSessionCookie(c)
+		return jsonError(c, fiber.StatusUnauthorized, "Authentication required")
+	}
+
+	if err := h.queries.DeleteOtherUserSessions(
+		c.Context(),
+		db.DeleteOtherUserSessionsParams{
+			UserID: current.UserID,
+			Token:  hashToken(c.Cookies(sessionCookieName)),
+		},
+	); err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to revoke sessions")
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
 func (h *Handler) currentSession(c fiber.Ctx) (db.GetSessionUserRow, bool, error) {
 	rawToken := c.Cookies(sessionCookieName)
 	if rawToken == "" {
@@ -542,6 +630,24 @@ func sessionFromRow(row db.GetSessionUserRow) sessionResponse {
 		ImpersonatedBy:       stringPointer(row.ImpersonatedBy),
 		ActiveOrganizationID: stringPointer(row.ActiveOrganizationID),
 		ActiveTeamID:         stringPointer(row.ActiveTeamID),
+	}
+}
+
+func managedSessionFromRow(row db.ListUserSessionsRow) managedSessionResponse {
+	return managedSessionResponse{
+		sessionResponse: sessionResponse{
+			ID:                   row.ID,
+			ExpiresAt:            row.ExpiresAt.Time,
+			CreatedAt:            row.CreatedAt.Time,
+			UpdatedAt:            row.UpdatedAt.Time,
+			IPAddress:            stringPointer(row.IpAddress),
+			UserAgent:            stringPointer(row.UserAgent),
+			UserID:               row.UserID,
+			ImpersonatedBy:       stringPointer(row.ImpersonatedBy),
+			ActiveOrganizationID: stringPointer(row.ActiveOrganizationID),
+			ActiveTeamID:         stringPointer(row.ActiveTeamID),
+		},
+		Current: row.IsCurrent,
 	}
 }
 

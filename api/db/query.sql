@@ -120,3 +120,28 @@ WHERE user_id = $1
 DELETE FROM sessions
 WHERE user_id = $1
   AND token <> $2;
+
+-- name: ListUserSessions :many
+SELECT
+    id,
+    expires_at,
+    created_at,
+    updated_at,
+    ip_address,
+    user_agent,
+    user_id,
+    impersonated_by,
+    active_organization_id,
+    active_team_id,
+    token = $2 AS is_current
+FROM sessions
+WHERE user_id = $1
+  AND expires_at > (now() AT TIME ZONE 'UTC')
+ORDER BY created_at DESC;
+
+-- name: RevokeUserSession :one
+DELETE FROM sessions
+WHERE id = $1
+  AND user_id = $2
+  AND token <> $3
+RETURNING id;

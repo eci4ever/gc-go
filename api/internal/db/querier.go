@@ -19,7 +19,9 @@ type Querier interface {
 	GetCredentialPasswordByUserID(ctx context.Context, userID string) (pgtype.Text, error)
 	GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error)
 	GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error)
+	ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error)
 	Ping(ctx context.Context) (int32, error)
+	RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) (string, error)
 	UpdateCredentialPassword(ctx context.Context, arg UpdateCredentialPasswordParams) error
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 }
