@@ -43,6 +43,11 @@ type updateProfileRequest struct {
 	Image string `json:"image"`
 }
 
+type changePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
 type userResponse struct {
 	ID            string  `json:"id"`
 	Name          string  `json:"name"`
@@ -83,6 +88,7 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Post("/logout", h.logout)
 	router.Get("/session", h.session)
 	router.Put("/profile", h.updateProfile)
+	router.Put("/password", h.changePassword)
 }
 
 func (h *Handler) signup(c fiber.Ctx) error {
@@ -306,6 +312,94 @@ func (h *Handler) updateProfile(c fiber.Ctx) error {
 		"session": sessionFromRow(session),
 		"user":    userFromModel(user),
 	})
+}
+
+func (h *Handler) changePassword(c fiber.Ctx) error {
+	session, ok, err := h.currentSession(c)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to read session")
+	}
+	if !ok {
+		h.clearSessionCookie(c)
+		return jsonError(c, fiber.StatusUnauthorized, "Authentication required")
+	}
+
+	var request changePasswordRequest
+	if err := c.Bind().Body(&request); err != nil {
+		return jsonError(c, fiber.StatusBadRequest, "Invalid request body")
+	}
+	if request.CurrentPassword == "" {
+		return jsonError(c, fiber.StatusBadRequest, "Current password is required")
+	}
+	if len(request.NewPassword) < 8 || len(request.NewPassword) > 72 {
+		return jsonError(
+			c,
+			fiber.StatusBadRequest,
+			"New password must be between 8 and 72 characters",
+		)
+	}
+
+	password, err := h.queries.GetCredentialPasswordByUserID(
+		c.Context(),
+		session.UserID,
+	)
+	if err != nil || !password.Valid {
+		if errors.Is(err, pgx.ErrNoRows) || !password.Valid {
+			return jsonError(c, fiber.StatusBadRequest, "Password login is unavailable")
+		}
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to change password")
+	}
+	if bcrypt.CompareHashAndPassword(
+		[]byte(password.String),
+		[]byte(request.CurrentPassword),
+	) != nil {
+		return jsonError(c, fiber.StatusBadRequest, "Current password is incorrect")
+	}
+	if bcrypt.CompareHashAndPassword(
+		[]byte(password.String),
+		[]byte(request.NewPassword),
+	) == nil {
+		return jsonError(c, fiber.StatusBadRequest, "New password must be different")
+	}
+
+	passwordHash, err := bcrypt.GenerateFromPassword(
+		[]byte(request.NewPassword),
+		bcrypt.DefaultCost,
+	)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to change password")
+	}
+
+	transaction, err := h.pool.Begin(c.Context())
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to change password")
+	}
+	defer transaction.Rollback(c.Context())
+
+	queries := h.queries.WithTx(transaction)
+	if err := queries.UpdateCredentialPassword(
+		c.Context(),
+		db.UpdateCredentialPasswordParams{
+			UserID:   session.UserID,
+			Password: textValue(string(passwordHash)),
+		},
+	); err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to change password")
+	}
+	if err := queries.DeleteOtherUserSessions(
+		c.Context(),
+		db.DeleteOtherUserSessionsParams{
+			UserID: session.UserID,
+			Token:  hashToken(c.Cookies(sessionCookieName)),
+		},
+	); err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to change password")
+	}
+	if err := transaction.Commit(c.Context()); err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to change password")
+	}
+
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func (h *Handler) currentSession(c fiber.Ctx) (db.GetSessionUserRow, bool, error) {

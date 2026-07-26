@@ -6,16 +6,21 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
 	CreateCredentialAccount(ctx context.Context, arg CreateCredentialAccountParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
 	DeleteSession(ctx context.Context, token string) error
+	GetCredentialPasswordByUserID(ctx context.Context, userID string) (pgtype.Text, error)
 	GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error)
 	GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error)
 	Ping(ctx context.Context) (int32, error)
+	UpdateCredentialPassword(ctx context.Context, arg UpdateCredentialPasswordParams) error
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 }
 

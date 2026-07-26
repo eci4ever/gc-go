@@ -100,3 +100,23 @@ SET
     updated_at = (now() AT TIME ZONE 'UTC')
 WHERE id = $1
 RETURNING *;
+
+-- name: GetCredentialPasswordByUserID :one
+SELECT password
+FROM accounts
+WHERE user_id = $1
+  AND provider_id = 'credential'
+LIMIT 1;
+
+-- name: UpdateCredentialPassword :exec
+UPDATE accounts
+SET
+    password = $2,
+    updated_at = (now() AT TIME ZONE 'UTC')
+WHERE user_id = $1
+  AND provider_id = 'credential';
+
+-- name: DeleteOtherUserSessions :exec
+DELETE FROM sessions
+WHERE user_id = $1
+  AND token <> $2;

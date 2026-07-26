@@ -136,6 +136,22 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const deleteOtherUserSessions = `-- name: DeleteOtherUserSessions :exec
+DELETE FROM sessions
+WHERE user_id = $1
+  AND token <> $2
+`
+
+type DeleteOtherUserSessionsParams struct {
+	UserID string
+	Token  string
+}
+
+func (q *Queries) DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error {
+	_, err := q.db.Exec(ctx, deleteOtherUserSessions, arg.UserID, arg.Token)
+	return err
+}
+
 const deleteSession = `-- name: DeleteSession :exec
 DELETE FROM sessions
 WHERE token = $1
@@ -144,6 +160,21 @@ WHERE token = $1
 func (q *Queries) DeleteSession(ctx context.Context, token string) error {
 	_, err := q.db.Exec(ctx, deleteSession, token)
 	return err
+}
+
+const getCredentialPasswordByUserID = `-- name: GetCredentialPasswordByUserID :one
+SELECT password
+FROM accounts
+WHERE user_id = $1
+  AND provider_id = 'credential'
+LIMIT 1
+`
+
+func (q *Queries) GetCredentialPasswordByUserID(ctx context.Context, userID string) (pgtype.Text, error) {
+	row := q.db.QueryRow(ctx, getCredentialPasswordByUserID, userID)
+	var password pgtype.Text
+	err := row.Scan(&password)
+	return password, err
 }
 
 const getCredentialUserByEmail = `-- name: GetCredentialUserByEmail :one
@@ -271,6 +302,25 @@ func (q *Queries) Ping(ctx context.Context) (int32, error) {
 	var value int32
 	err := row.Scan(&value)
 	return value, err
+}
+
+const updateCredentialPassword = `-- name: UpdateCredentialPassword :exec
+UPDATE accounts
+SET
+    password = $2,
+    updated_at = (now() AT TIME ZONE 'UTC')
+WHERE user_id = $1
+  AND provider_id = 'credential'
+`
+
+type UpdateCredentialPasswordParams struct {
+	UserID   string
+	Password pgtype.Text
+}
+
+func (q *Queries) UpdateCredentialPassword(ctx context.Context, arg UpdateCredentialPasswordParams) error {
+	_, err := q.db.Exec(ctx, updateCredentialPassword, arg.UserID, arg.Password)
+	return err
 }
 
 const updateUserProfile = `-- name: UpdateUserProfile :one

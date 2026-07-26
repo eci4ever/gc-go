@@ -41,6 +41,11 @@ export type UpdateProfileInput = {
   image: string
 }
 
+export type ChangePasswordInput = {
+  currentPassword: string
+  newPassword: string
+}
+
 export class AuthError extends Error {
   constructor(message: string) {
     super(message)
@@ -74,6 +79,25 @@ export function updateProfile(input: UpdateProfileInput) {
     method: 'PUT',
     body: JSON.stringify(input),
   })
+}
+
+export async function changePassword(input: ChangePasswordInput) {
+  const response = await fetch('/api/auth/password', {
+    method: 'PUT',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    throw new AuthError(
+      body && typeof body.error === 'string'
+        ? body.error
+        : 'Unable to change password',
+    )
+  }
 }
 
 export async function logout() {

@@ -134,6 +134,46 @@ func TestAuthFlowIntegration(t *testing.T) {
 		t.Fatal("profile update changed the user's email")
 	}
 
+	incorrectPasswordResponse := authRequest(
+		t,
+		app,
+		http.MethodPut,
+		"/api/auth/password",
+		map[string]string{
+			"currentPassword": "incorrect-password",
+			"newPassword":     "updated-horse-battery-staple",
+		},
+		cookies[0],
+	)
+	if incorrectPasswordResponse.StatusCode != http.StatusBadRequest {
+		t.Fatalf(
+			"incorrect password status = %d, want %d",
+			incorrectPasswordResponse.StatusCode,
+			http.StatusBadRequest,
+		)
+	}
+	incorrectPasswordResponse.Body.Close()
+
+	passwordResponse := authRequest(
+		t,
+		app,
+		http.MethodPut,
+		"/api/auth/password",
+		map[string]string{
+			"currentPassword": "correct-horse-battery-staple",
+			"newPassword":     "updated-horse-battery-staple",
+		},
+		cookies[0],
+	)
+	if passwordResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"password status = %d, want %d",
+			passwordResponse.StatusCode,
+			http.StatusNoContent,
+		)
+	}
+	passwordResponse.Body.Close()
+
 	logoutResponse := authRequest(
 		t,
 		app,
@@ -149,7 +189,7 @@ func TestAuthFlowIntegration(t *testing.T) {
 
 	loginResponse := authRequest(t, app, http.MethodPost, "/api/auth/login", map[string]string{
 		"email":    email,
-		"password": "correct-horse-battery-staple",
+		"password": "updated-horse-battery-staple",
 	}, nil)
 	if loginResponse.StatusCode != http.StatusOK {
 		t.Fatalf("login status = %d, want %d", loginResponse.StatusCode, http.StatusOK)
