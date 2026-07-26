@@ -1,5 +1,29 @@
 import { useQuery } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import {
+  Activity,
+  ArrowRight,
+  Check,
+  CircleAlert,
+  Clock3,
+  Database,
+  RefreshCw,
+  Server,
+} from 'lucide-react'
+
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
 
 export const Route = createFileRoute('/')({
   component: Home,
@@ -13,6 +37,8 @@ type Health = {
   time: string
 }
 
+type StatusState = 'online' | 'error' | 'pending'
+
 function Home() {
   const health = useQuery({
     queryKey: ['health'],
@@ -24,85 +50,272 @@ function Home() {
     refetchInterval: 30_000,
   })
 
+  const systemOnline = health.data?.status === 'ok'
+  const latency = health.data?.db_latency_ms
+
   return (
-    <main className="py-12 sm:py-16">
-      <section className="flex min-h-0 items-center justify-between gap-10 sm:min-h-[250px]">
-        <div>
-          <p className="text-[.68rem] font-extrabold tracking-[.18em] text-[#829a44]">SYSTEM OVERVIEW <span className="px-1 text-[#bed95b]">•</span> LIVE</p>
-          <h1 className="mt-4 max-w-2xl text-[clamp(2.7rem,5vw,4.8rem)] font-extrabold leading-[1.02] tracking-[-.04em] text-ink">A clearer view of what’s running.</h1>
-          <p className="mt-5 max-w-lg text-base leading-relaxed text-muted">A quiet, real-time snapshot of the API and the database behind it.</p>
+    <main className="py-10 sm:py-14">
+      <section className="grid items-center gap-8 lg:grid-cols-[1fr_18rem]">
+        <div className="max-w-2xl">
+          <Badge
+            variant="secondary"
+          >
+            <span className="size-1.5 rounded-full bg-primary" />
+            Live system overview
+          </Badge>
+          <h1 className="mt-5 max-w-xl font-heading text-4xl font-semibold tracking-tight sm:text-5xl">
+            Infrastructure status,
+            <span className="text-muted-foreground"> without the noise.</span>
+          </h1>
+          <p className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">
+            A focused view of the API and PostgreSQL connection powering this
+            application.
+          </p>
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <Button
+              size="lg"
+              render={<Link to="/about" />}
+            >
+              Explore the stack
+              <ArrowRight data-icon="inline-end" />
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Refreshes automatically every 30 seconds
+            </span>
+          </div>
         </div>
-        <div className="relative hidden size-[210px] shrink-0 md:block" aria-hidden="true">
-          <div className="absolute inset-0 rounded-full border border-[#cbdcc9] rotate-[25deg] scale-y-[.45]" />
-          <div className="absolute inset-0 rounded-full border border-[#cbdcc9] -rotate-[25deg] scale-y-[.45]" />
-          <div className="absolute inset-[63px] grid place-items-center rounded-full bg-lime text-lg font-black text-ink shadow-[0_0_0_12px_#d8f36e44,0_18px_35px_#7e9d5533]">GC</div>
-        </div>
+
+        <Card className="hidden lg:flex">
+          <CardHeader>
+            <CardTitle>Current snapshot</CardTitle>
+            <CardDescription>Latest service check</CardDescription>
+            <CardAction>
+              <span
+                className={cn(
+                  'grid size-8 place-items-center rounded-full',
+                  systemOnline
+                    ? 'bg-primary/10 text-primary'
+                    : 'bg-muted text-muted-foreground',
+                )}
+              >
+                {systemOnline ? (
+                  <Check className="size-4" />
+                ) : (
+                  <CircleAlert className="size-4" />
+                )}
+              </span>
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            {health.isPending ? (
+              <div className="space-y-2">
+                <Skeleton className="h-7 w-28" />
+                <Skeleton className="h-3 w-40" />
+              </div>
+            ) : (
+              <>
+                <p className="font-heading text-2xl font-semibold tracking-tight">
+                  {health.isError
+                    ? 'Unavailable'
+                    : systemOnline
+                      ? 'All clear'
+                      : 'Degraded'}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {health.data
+                    ? new Date(health.data.time).toLocaleString()
+                    : 'Waiting for a successful check'}
+                </p>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3" aria-label="System status">
+      <section className="mt-10 grid gap-4 md:grid-cols-3" aria-label="System status">
         <StatusCard
-          label="API status"
-          value={health.isPending ? 'Checking' : health.isError ? 'Offline' : health.data?.api === 'ok' ? 'Operational' : 'Degraded'}
-          detail={health.isError ? 'Unable to reach the service' : 'Fiber is responding normally'}
-          state={health.isError ? 'error' : health.data?.api === 'ok' ? 'online' : 'pending'}
-          icon="↗"
+          label="API service"
+          value={
+            health.isPending
+              ? 'Checking'
+              : health.isError
+                ? 'Offline'
+                : health.data?.api === 'ok'
+                  ? 'Operational'
+                  : 'Degraded'
+          }
+          detail={
+            health.isError
+              ? 'The API did not respond'
+              : 'Fiber is accepting requests'
+          }
+          state={
+            health.isError
+              ? 'error'
+              : health.data?.api === 'ok'
+                ? 'online'
+                : 'pending'
+          }
+          icon={Server}
+          pending={health.isPending}
         />
         <StatusCard
-          label="Database"
-          value={health.isPending ? 'Checking' : health.isError ? 'Unknown' : health.data?.db === 'ok' ? 'Connected' : 'Unavailable'}
-          detail={health.isError ? 'Waiting for an API response' : health.data?.db === 'ok' ? 'PostgreSQL connection is healthy' : 'Connection needs attention'}
-          state={health.data?.db === 'ok' ? 'online' : health.isError ? 'pending' : 'error'}
-          icon="⌁"
+          label="PostgreSQL"
+          value={
+            health.isPending
+              ? 'Checking'
+              : health.isError
+                ? 'Unknown'
+                : health.data?.db === 'ok'
+                  ? 'Connected'
+                  : 'Unavailable'
+          }
+          detail={
+            health.isError
+              ? 'Waiting for the API'
+              : health.data?.db === 'ok'
+                ? 'Connection pool is healthy'
+                : 'Database needs attention'
+          }
+          state={
+            health.data?.db === 'ok'
+              ? 'online'
+              : health.isError
+                ? 'pending'
+                : 'error'
+          }
+          icon={Database}
+          pending={health.isPending}
         />
         <StatusCard
-          label="DB latency"
-          value={health.data?.db_latency_ms != null ? `${health.data.db_latency_ms.toFixed(1)} ms` : health.isPending ? 'Checking' : '—'}
-          detail="Latest health query round trip"
-          state={health.data?.db_latency_ms != null ? 'online' : 'pending'}
-          icon="◷"
+          label="Database latency"
+          value={
+            latency != null
+              ? `${latency.toFixed(1)} ms`
+              : health.isPending
+                ? 'Checking'
+                : '—'
+          }
+          detail={
+            latency == null
+              ? 'No measurement available'
+              : latency < 100
+                ? 'Excellent response time'
+                : latency < 500
+                  ? 'Normal response time'
+                  : 'Slower than usual'
+          }
+          state={latency != null ? 'online' : 'pending'}
+          icon={Clock3}
+          pending={health.isPending}
         />
       </section>
 
-      <section className="mt-4 flex items-center gap-3 rounded-[18px] border border-line bg-[#eef4e9] px-5 py-[18px]">
-        <span className={`size-2.5 shrink-0 rounded-full ${health.data?.status === 'ok' ? 'bg-[#92b337] shadow-[0_0_0_5px_#92b3371c]' : 'bg-[#df8b65] shadow-[0_0_0_5px_#df8b651c]'}`} />
-        <div className="grid gap-0.5">
-          <strong className="text-sm text-[#33463b]">{health.isPending ? 'Refreshing system status…' : health.isError ? 'System status unavailable' : health.data?.status === 'ok' ? 'All systems operational' : 'Some systems need attention'}</strong>
-          {health.data && <small className="text-[#829087]">Last checked {new Date(health.data.time).toLocaleString()}</small>}
-        </div>
-        <span className="ml-auto text-xs text-[#829087] max-sm:hidden">Auto-refresh · 30s</span>
-      </section>
+      <Card className="mt-4 bg-muted/40 shadow-none">
+        <CardFooter className="gap-3">
+          <span
+            className={cn(
+              'grid size-7 place-items-center rounded-full',
+              systemOnline
+                ? 'bg-primary/10 text-primary'
+                : 'bg-muted text-muted-foreground',
+            )}
+          >
+            {health.isPending ? (
+              <RefreshCw className="size-3.5 animate-spin" />
+            ) : systemOnline ? (
+              <Activity className="size-3.5" />
+            ) : (
+              <CircleAlert className="size-3.5" />
+            )}
+          </span>
+          <div>
+            <p className="text-xs font-medium">
+              {health.isPending
+                ? 'Refreshing system status'
+                : health.isError
+                  ? 'System status unavailable'
+                  : systemOnline
+                    ? 'All systems operational'
+                    : 'Some systems need attention'}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {health.data
+                ? `Last checked ${new Date(health.data.time).toLocaleString()}`
+                : 'The next check will run automatically'}
+            </p>
+          </div>
+          <Badge variant="secondary" className="ml-auto max-sm:hidden">
+            <RefreshCw data-icon="inline-start" />
+            30s interval
+          </Badge>
+        </CardFooter>
+      </Card>
     </main>
   )
 }
+
+type Icon = typeof Server
 
 type StatusCardProps = {
   label: string
   value: string
   detail: string
-  state: 'online' | 'error' | 'pending'
-  icon: string
+  state: StatusState
+  icon: Icon
+  pending: boolean
 }
 
-function StatusCard({ label, value, detail, state, icon }: StatusCardProps) {
-  const iconStyles = {
-    online: 'bg-[#eef6c9] text-[#69813a]',
-    error: 'bg-[#fff0e9] text-[#ad6b4a]',
-    pending: 'bg-[#eef3ea] text-[#6b7e70]',
-  }[state]
-  const markStyles = {
-    online: 'bg-[#92b337] shadow-[0_0_0_5px_#92b3371c]',
-    error: 'bg-[#df8b65] shadow-[0_0_0_5px_#df8b651c]',
-    pending: 'bg-[#c8d0ca]',
-  }[state]
-
+function StatusCard({
+  label,
+  value,
+  detail,
+  state,
+  icon: Icon,
+  pending,
+}: StatusCardProps) {
   return (
-    <article className="min-h-[166px] rounded-[18px] border border-line bg-white/70 p-5 shadow-[0_12px_35px_#4e694d0b] transition-transform duration-200 hover:-translate-y-0.5">
-      <div className="flex items-center justify-between">
-        <span className="text-[.68rem] font-extrabold uppercase tracking-[.08em] text-[#829087]">{label}</span>
-        <span className={`grid size-8 place-items-center rounded-[9px] text-lg ${iconStyles}`} aria-hidden="true">{icon}</span>
-      </div>
-      <div className="mt-6 flex items-center gap-2.5 text-[1.2rem] font-bold tracking-tight text-ink"><span className={`size-2 rounded-full ${markStyles}`} />{value}</div>
-      <p className="mt-2 text-[.78rem] leading-snug text-[#819087]">{detail}</p>
-    </article>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-xs text-muted-foreground">{label}</CardTitle>
+        <CardAction>
+          <span
+            className={cn(
+              'grid size-8 place-items-center rounded-md',
+              state === 'online' && 'bg-primary/10 text-primary',
+              state === 'error' && 'bg-destructive/10 text-destructive',
+              state === 'pending' && 'bg-muted text-muted-foreground',
+            )}
+          >
+            <Icon className="size-4" />
+          </span>
+        </CardAction>
+      </CardHeader>
+      <CardContent>
+        {pending ? (
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-28" />
+            <Skeleton className="h-3 w-36" />
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  'size-2 rounded-full',
+                  state === 'online' && 'bg-primary',
+                  state === 'error' && 'bg-destructive',
+                  state === 'pending' && 'bg-muted-foreground/50',
+                )}
+              />
+              <p className="font-heading text-xl font-semibold tracking-tight">
+                {value}
+              </p>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">{detail}</p>
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }
