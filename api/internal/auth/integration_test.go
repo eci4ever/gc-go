@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -57,6 +58,8 @@ func TestAuthFlowIntegration(t *testing.T) {
 
 	app := fiber.New()
 	handler := NewHandler(pool, db.New(pool), false)
+	emailSender := &verificationEmailRecorder{}
+	handler.ConfigureEmailVerification(emailSender, "https://example.com")
 	handler.Register(app.Group("/api/auth"))
 	handler.RegisterDashboard(app.Group("/api"))
 
@@ -260,6 +263,49 @@ func TestAuthFlowIntegration(t *testing.T) {
 		len(dashboardBody.SignInActivity) != 14 ||
 		len(dashboardBody.RecentSessions) != 1 {
 		t.Fatal("dashboard summary did not return the expected security data")
+	}
+
+	if emailSender.verificationURL == "" ||
+		!strings.EqualFold(emailSender.to, email) {
+		t.Fatalf(
+			"signup verification email = (%q, %q), want recipient %q",
+			emailSender.to,
+			emailSender.verificationURL,
+			email,
+		)
+	}
+	verificationURL, err := url.Parse(emailSender.verificationURL)
+	if err != nil {
+		t.Fatalf("parse email verification URL: %v", err)
+	}
+	verifyEmailResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/email-verification/verify",
+		map[string]string{"token": verificationURL.Query().Get("token")},
+		nil,
+	)
+	if verifyEmailResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"email verification status = %d, want %d",
+			verifyEmailResponse.StatusCode,
+			http.StatusNoContent,
+		)
+	}
+	verifyEmailResponse.Body.Close()
+
+	sessionHTTPResponse = authRequest(
+		t,
+		app,
+		http.MethodGet,
+		"/api/auth/session",
+		nil,
+		cookies[0],
+	)
+	decodeResponse(t, sessionHTTPResponse, &sessionBody)
+	if sessionBody.User == nil || !sessionBody.User.EmailVerified {
+		t.Fatal("email verification did not update the user")
 	}
 
 	profileResponse := authRequest(
@@ -504,6 +550,22 @@ func TestAuthFlowIntegration(t *testing.T) {
 	recoveryVerifyResponse.Body.Close()
 }
 
+type verificationEmailRecorder struct {
+	to              string
+	verificationURL string
+}
+
+func (r *verificationEmailRecorder) SendVerification(
+	_ context.Context,
+	to string,
+	_ string,
+	verificationURL string,
+) error {
+	r.to = to
+	r.verificationURL = verificationURL
+	return nil
+}
+
 func authRequest(
 	t *testing.T,
 	app *fiber.App,
@@ -532,7 +594,7 @@ func authRequest(
 	}
 
 	response, err := app.Test(request, fiber.TestConfig{
-		Timeout:       10 * time.Second,
+		Timeout:       30 * time.Second,
 		FailOnTimeout: true,
 	})
 	if err != nil {

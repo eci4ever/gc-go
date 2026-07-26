@@ -1,11 +1,13 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"log"
 	"net/mail"
 	"net/url"
 	"strings"
@@ -22,14 +24,26 @@ import (
 )
 
 const (
-	sessionCookieName = "gc_go_session"
-	sessionLifetime   = 7 * 24 * time.Hour
+	sessionCookieName    = "gc_go_session"
+	sessionLifetime      = 7 * 24 * time.Hour
+	verificationLifetime = 30 * time.Minute
 )
+
+type VerificationEmailSender interface {
+	SendVerification(
+		ctx context.Context,
+		to string,
+		name string,
+		verificationURL string,
+	) error
+}
 
 type Handler struct {
 	pool         *pgxpool.Pool
 	queries      *db.Queries
 	cookieSecure bool
+	emailSender  VerificationEmailSender
+	appURL       string
 }
 
 type credentialsRequest struct {
@@ -87,6 +101,14 @@ func NewHandler(
 	}
 }
 
+func (h *Handler) ConfigureEmailVerification(
+	sender VerificationEmailSender,
+	appURL string,
+) {
+	h.emailSender = sender
+	h.appURL = strings.TrimRight(appURL, "/")
+}
+
 func (h *Handler) Register(router fiber.Router) {
 	router.Post("/signup", h.signup)
 	router.Post("/login", h.login)
@@ -102,6 +124,8 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Post("/2fa/enable", h.enableTwoFactor)
 	router.Post("/2fa/disable", h.disableTwoFactor)
 	router.Post("/2fa/verify-login", h.verifyTwoFactorLogin)
+	router.Post("/email-verification", h.sendEmailVerification)
+	router.Post("/email-verification/verify", h.verifyEmail)
 }
 
 func (h *Handler) signup(c fiber.Ctx) error {
@@ -197,6 +221,9 @@ func (h *Handler) signup(c fiber.Ctx) error {
 
 	h.setSessionCookie(c, rawToken, expiresAt)
 	h.recordAuthEvent(c, userID, "account_created")
+	if err := h.createAndSendEmailVerification(c.Context(), user); err != nil {
+		log.Printf("send signup verification email: %v", err)
+	}
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{
 		"session": sessionFromModel(session),
 		"user":    userFromModel(user),

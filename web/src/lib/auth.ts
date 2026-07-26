@@ -158,6 +158,19 @@ export function revokeOtherSessions() {
   })
 }
 
+export function sendEmailVerification() {
+  return emptyRequest('/api/auth/email-verification', {
+    method: 'POST',
+  })
+}
+
+export function verifyEmail(token: string) {
+  return emptyRequest('/api/auth/email-verification/verify', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  })
+}
+
 export async function logout() {
   return emptyRequest('/api/auth/logout', {
     method: 'POST',

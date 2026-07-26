@@ -14,21 +14,27 @@ type Querier interface {
 	CountActiveUserSessions(ctx context.Context, userID string) (int32, error)
 	CreateAuthEvent(ctx context.Context, arg CreateAuthEventParams) error
 	CreateCredentialAccount(ctx context.Context, arg CreateCredentialAccountParams) error
+	CreateEmailVerification(ctx context.Context, arg CreateEmailVerificationParams) error
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTwoFactorChallenge(ctx context.Context, arg CreateTwoFactorChallengeParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DeleteEmailVerification(ctx context.Context, id string) error
 	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
 	DeleteSession(ctx context.Context, token string) error
 	DeleteTwoFactor(ctx context.Context, userID string) error
 	DeleteTwoFactorChallenge(ctx context.Context, id string) error
+	DeleteUserEmailVerifications(ctx context.Context, identifier string) error
 	EnableTwoFactor(ctx context.Context, arg EnableTwoFactorParams) error
+	GetActiveEmailVerification(ctx context.Context, value string) (GetActiveEmailVerificationRow, error)
 	GetCredentialPasswordByUserID(ctx context.Context, userID string) (pgtype.Text, error)
 	GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error)
+	GetRecentEmailVerification(ctx context.Context, identifier string) (pgtype.Timestamp, error)
 	GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error)
 	GetTwoFactorByUserID(ctx context.Context, userID string) (TwoFactor, error)
 	GetTwoFactorChallenge(ctx context.Context, token string) (GetTwoFactorChallengeRow, error)
 	GetUserSignInActivity(ctx context.Context, userID string) ([]GetUserSignInActivityRow, error)
 	ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error)
+	MarkUserEmailVerified(ctx context.Context, id string) error
 	Ping(ctx context.Context) (int32, error)
 	RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) (string, error)
 	UpdateCredentialPassword(ctx context.Context, arg UpdateCredentialPasswordParams) error

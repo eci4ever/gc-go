@@ -8,6 +8,7 @@ import {
   CopyIcon,
   KeyRoundIcon,
   Loader2Icon,
+  MailCheckIcon,
   MonitorSmartphoneIcon,
   SaveIcon,
   ShieldCheckIcon,
@@ -47,6 +48,7 @@ import {
   enableTwoFactor,
   revokeOtherSessions,
   revokeSession,
+  sendEmailVerification,
   sessionQueryOptions,
   setupTwoFactor,
   twoFactorStatusQueryOptions,
@@ -72,6 +74,11 @@ function Account() {
   const queryClient = useQueryClient()
   const router = useRouter()
   const sessionsQuery = useQuery(userSessionsQueryOptions)
+  const emailVerificationMutation = useMutation({
+    mutationFn: sendEmailVerification,
+    onSuccess: () => toast.success('Verification email sent'),
+    onError: (error) => toast.error(error.message),
+  })
   const profileMutation = useMutation({
     mutationFn: (input: UpdateProfileInput) => updateProfile(input),
     onSuccess: async (session) => {
@@ -193,6 +200,25 @@ function Account() {
                 <FieldDescription>
                   Email changes are currently disabled.
                 </FieldDescription>
+                {!user.emailVerified ? (
+                  <div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={emailVerificationMutation.isPending}
+                      onClick={() => emailVerificationMutation.mutate()}
+                    >
+                      {emailVerificationMutation.isPending ? (
+                        <Loader2Icon className="animate-spin" />
+                      ) : (
+                        <MailCheckIcon />
+                      )}
+                      {emailVerificationMutation.isPending
+                        ? 'Sending…'
+                        : 'Resend verification email'}
+                    </Button>
+                  </div>
+                ) : null}
               </Field>
 
               <Field>

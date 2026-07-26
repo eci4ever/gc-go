@@ -9,8 +9,10 @@ import {
   login,
   revokeOtherSessions,
   revokeSession,
+  sendEmailVerification,
   setupTwoFactor,
   verifyTwoFactorLogin,
+  verifyEmail,
 } from './auth'
 import { server } from '@/test/server'
 
@@ -140,5 +142,28 @@ describe('auth API client', () => {
     await expect(
       disableTwoFactor('password123', '123456'),
     ).resolves.toBeUndefined()
+  })
+
+  it('supports sending and completing email verification', async () => {
+    const requests: string[] = []
+    server.use(
+      http.post('/api/auth/email-verification', () => {
+        requests.push('send')
+        return new HttpResponse(null, { status: 204 })
+      }),
+      http.post(
+        '/api/auth/email-verification/verify',
+        async ({ request }) => {
+          const body = (await request.json()) as { token: string }
+          requests.push(`verify:${body.token}`)
+          return new HttpResponse(null, { status: 204 })
+        },
+      ),
+    )
+
+    await sendEmailVerification()
+    await verifyEmail('verification-token')
+
+    expect(requests).toEqual(['send', 'verify:verification-token'])
   })
 })

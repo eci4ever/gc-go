@@ -12,6 +12,7 @@ import (
 
 	"gc-go/api/internal/auth"
 	"gc-go/api/internal/db"
+	appemail "gc-go/api/internal/email"
 )
 
 func main() {
@@ -44,6 +45,20 @@ func main() {
 
 	api := app.Group("/api")
 	authHandler := auth.NewHandler(database, queries, cookieSecure)
+	if resendAPIKey := os.Getenv("RESEND_API_KEY"); resendAPIKey != "" {
+		from := os.Getenv("RESEND_FROM_EMAIL")
+		if from == "" {
+			from = "GC Go <onboarding@resend.dev>"
+		}
+		appURL := os.Getenv("APP_URL")
+		if appURL == "" {
+			appURL = "http://localhost:5173"
+		}
+		authHandler.ConfigureEmailVerification(
+			appemail.NewResendSender(resendAPIKey, from),
+			appURL,
+		)
+	}
 	authHandler.Register(api.Group("/auth"))
 	authHandler.RegisterDashboard(api)
 	api.Get("/health", func(c fiber.Ctx) error {

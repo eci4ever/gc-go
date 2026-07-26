@@ -13,6 +13,52 @@ INSERT INTO users (
 )
 RETURNING *;
 
+-- name: DeleteUserEmailVerifications :exec
+DELETE FROM verifications
+WHERE identifier = $1;
+
+-- name: CreateEmailVerification :exec
+INSERT INTO verifications (
+    id,
+    identifier,
+    value,
+    expires_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4
+);
+
+-- name: GetActiveEmailVerification :one
+SELECT
+    verifications.id,
+    verifications.identifier AS user_id
+FROM verifications
+JOIN users ON users.id = verifications.identifier
+WHERE verifications.value = $1
+  AND verifications.expires_at > (now() AT TIME ZONE 'UTC')
+  AND users.email_verified = FALSE
+LIMIT 1
+FOR UPDATE;
+
+-- name: GetRecentEmailVerification :one
+SELECT created_at
+FROM verifications
+WHERE identifier = $1
+  AND created_at > (now() AT TIME ZONE 'UTC') - INTERVAL '60 seconds'
+ORDER BY created_at DESC
+LIMIT 1;
+
+-- name: MarkUserEmailVerified :exec
+UPDATE users
+SET email_verified = TRUE
+WHERE id = $1;
+
+-- name: DeleteEmailVerification :exec
+DELETE FROM verifications
+WHERE id = $1;
+
 -- name: CreateCredentialAccount :exec
 INSERT INTO accounts (
     id,

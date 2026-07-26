@@ -93,6 +93,37 @@ func (q *Queries) CreateCredentialAccount(ctx context.Context, arg CreateCredent
 	return err
 }
 
+const createEmailVerification = `-- name: CreateEmailVerification :exec
+INSERT INTO verifications (
+    id,
+    identifier,
+    value,
+    expires_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4
+)
+`
+
+type CreateEmailVerificationParams struct {
+	ID         string
+	Identifier string
+	Value      string
+	ExpiresAt  pgtype.Timestamp
+}
+
+func (q *Queries) CreateEmailVerification(ctx context.Context, arg CreateEmailVerificationParams) error {
+	_, err := q.db.Exec(ctx, createEmailVerification,
+		arg.ID,
+		arg.Identifier,
+		arg.Value,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
 const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (
     id,
@@ -216,6 +247,16 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const deleteEmailVerification = `-- name: DeleteEmailVerification :exec
+DELETE FROM verifications
+WHERE id = $1
+`
+
+func (q *Queries) DeleteEmailVerification(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, deleteEmailVerification, id)
+	return err
+}
+
 const deleteOtherUserSessions = `-- name: DeleteOtherUserSessions :exec
 DELETE FROM sessions
 WHERE user_id = $1
@@ -262,6 +303,16 @@ func (q *Queries) DeleteTwoFactorChallenge(ctx context.Context, id string) error
 	return err
 }
 
+const deleteUserEmailVerifications = `-- name: DeleteUserEmailVerifications :exec
+DELETE FROM verifications
+WHERE identifier = $1
+`
+
+func (q *Queries) DeleteUserEmailVerifications(ctx context.Context, identifier string) error {
+	_, err := q.db.Exec(ctx, deleteUserEmailVerifications, identifier)
+	return err
+}
+
 const enableTwoFactor = `-- name: EnableTwoFactor :exec
 UPDATE two_factors
 SET
@@ -278,6 +329,31 @@ type EnableTwoFactorParams struct {
 func (q *Queries) EnableTwoFactor(ctx context.Context, arg EnableTwoFactorParams) error {
 	_, err := q.db.Exec(ctx, enableTwoFactor, arg.UserID, arg.BackupCodes)
 	return err
+}
+
+const getActiveEmailVerification = `-- name: GetActiveEmailVerification :one
+SELECT
+    verifications.id,
+    verifications.identifier AS user_id
+FROM verifications
+JOIN users ON users.id = verifications.identifier
+WHERE verifications.value = $1
+  AND verifications.expires_at > (now() AT TIME ZONE 'UTC')
+  AND users.email_verified = FALSE
+LIMIT 1
+FOR UPDATE
+`
+
+type GetActiveEmailVerificationRow struct {
+	ID     string
+	UserID string
+}
+
+func (q *Queries) GetActiveEmailVerification(ctx context.Context, value string) (GetActiveEmailVerificationRow, error) {
+	row := q.db.QueryRow(ctx, getActiveEmailVerification, value)
+	var i GetActiveEmailVerificationRow
+	err := row.Scan(&i.ID, &i.UserID)
+	return i, err
 }
 
 const getCredentialPasswordByUserID = `-- name: GetCredentialPasswordByUserID :one
@@ -347,6 +423,22 @@ func (q *Queries) GetCredentialUserByEmail(ctx context.Context, lower string) (G
 		&i.TwoFactorEnabled,
 	)
 	return i, err
+}
+
+const getRecentEmailVerification = `-- name: GetRecentEmailVerification :one
+SELECT created_at
+FROM verifications
+WHERE identifier = $1
+  AND created_at > (now() AT TIME ZONE 'UTC') - INTERVAL '60 seconds'
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetRecentEmailVerification(ctx context.Context, identifier string) (pgtype.Timestamp, error) {
+	row := q.db.QueryRow(ctx, getRecentEmailVerification, identifier)
+	var created_at pgtype.Timestamp
+	err := row.Scan(&created_at)
+	return created_at, err
 }
 
 const getSessionUser = `-- name: GetSessionUser :one
@@ -598,6 +690,17 @@ func (q *Queries) ListUserSessions(ctx context.Context, arg ListUserSessionsPara
 		return nil, err
 	}
 	return items, nil
+}
+
+const markUserEmailVerified = `-- name: MarkUserEmailVerified :exec
+UPDATE users
+SET email_verified = TRUE
+WHERE id = $1
+`
+
+func (q *Queries) MarkUserEmailVerified(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, markUserEmailVerified, id)
+	return err
 }
 
 const ping = `-- name: Ping :one
