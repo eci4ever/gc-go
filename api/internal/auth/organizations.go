@@ -29,7 +29,8 @@ type organizationSettingsRequest struct {
 }
 
 type organizationRoleRequest struct {
-	Role string `json:"role"`
+	Role         string `json:"role"`
+	CustomRoleID string `json:"customRoleId"`
 }
 
 type organizationTeamRequest struct {
@@ -66,6 +67,10 @@ func (h *Handler) RegisterOrganizations(router fiber.Router) {
 	router.Delete("/:slug/members/:userId", h.deleteOrganizationWorkspaceMember)
 	router.Post("/:slug/invitations", h.inviteOrganizationWorkspaceMember)
 	router.Delete("/:slug/invitations/:invitationId", h.cancelOrganizationWorkspaceInvitation)
+	router.Get("/:slug/roles", h.listOrganizationRoles)
+	router.Post("/:slug/roles", h.createOrganizationRole)
+	router.Put("/:slug/roles/:roleId", h.updateOrganizationRole)
+	router.Delete("/:slug/roles/:roleId", h.deleteOrganizationRole)
 	router.Get("/:slug/teams", h.listOrganizationWorkspaceTeams)
 	router.Get("/:slug/accessible-teams", h.listAccessibleOrganizationTeams)
 	router.Post("/:slug/teams", h.createOrganizationWorkspaceTeam)
@@ -146,7 +151,11 @@ func (h *Handler) getOrganizationWorkspace(c fiber.Ctx) error {
 	if !ok {
 		return nil
 	}
-	return c.JSON(fiber.Map{"organization": access.Org})
+	permissions, err := h.permissionsForMembership(c, access.Org, access.Current.UserID)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to load organization")
+	}
+	return c.JSON(fiber.Map{"organization": access.Org, "permissions": permissions})
 }
 
 func (h *Handler) activateOrganization(c fiber.Ctx) error {
@@ -167,7 +176,7 @@ func (h *Handler) activateOrganization(c fiber.Ctx) error {
 }
 
 func (h *Handler) updateOrganizationWorkspace(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c, "owner")
+	access, ok := h.organizationPermissionAccess(c, permissionOrganizationUpdate)
 	if !ok {
 		return nil
 	}
@@ -199,7 +208,7 @@ func (h *Handler) updateOrganizationWorkspace(c fiber.Ctx) error {
 }
 
 func (h *Handler) listOrganizationWorkspaceMembers(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c)
+	access, ok := h.organizationPermissionAccess(c, permissionMembersRead)
 	if !ok {
 		return nil
 	}
@@ -215,14 +224,16 @@ func (h *Handler) listOrganizationWorkspaceMembers(c fiber.Ctx) error {
 }
 
 func (h *Handler) updateOrganizationWorkspaceMember(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c, "owner")
+	access, ok := h.organizationPermissionAccess(c, permissionMembersRoleUpdate)
 	if !ok {
 		return nil
 	}
 	var request organizationRoleRequest
-	if err := c.Bind().Body(&request); err != nil ||
-		!validOrganizationMemberRole(request.Role) {
-		return jsonError(c, fiber.StatusBadRequest, "Role must be admin or member")
+	if err := c.Bind().Body(&request); err != nil {
+		return jsonError(c, fiber.StatusBadRequest, "Invalid request body")
+	}
+	if request.CustomRoleID == "" && !validOrganizationMemberRole(request.Role) {
+		return jsonError(c, fiber.StatusBadRequest, "Select a standard or custom role")
 	}
 	target, err := h.queries.AdminGetOrganizationMember(c.Context(), db.AdminGetOrganizationMemberParams{
 		OrganizationID: access.Org.ID, UserID: c.Params("userId"),
@@ -233,24 +244,60 @@ func (h *Handler) updateOrganizationWorkspaceMember(c fiber.Ctx) error {
 	if target.Role == "owner" {
 		return jsonError(c, fiber.StatusBadRequest, "Transfer ownership before changing the owner")
 	}
-	updated, err := h.queries.UpdateOrganizationMemberRole(c.Context(), db.UpdateOrganizationMemberRoleParams{
-		OrganizationID: access.Org.ID, UserID: c.Params("userId"), Role: request.Role,
-	})
+	if access.Org.Role != "owner" {
+		if request.Role == "admin" {
+			return jsonError(c, fiber.StatusForbidden, "Only the organization owner can assign administrators")
+		}
+		if request.CustomRoleID != "" {
+			targetPermissions, permissionErr := h.queries.ListOrganizationRolePermissionKeys(
+				c.Context(),
+				db.ListOrganizationRolePermissionKeysParams{
+					ID: request.CustomRoleID, OrganizationID: access.Org.ID,
+				},
+			)
+			if permissionErr != nil {
+				return jsonError(c, fiber.StatusInternalServerError, "Unable to validate organization role")
+			}
+			actorPermissions, permissionErr := h.permissionsForMembership(
+				c, access.Org, access.Current.UserID,
+			)
+			if permissionErr != nil || !containsEveryPermission(actorPermissions, targetPermissions) {
+				return jsonError(c, fiber.StatusForbidden, "You cannot assign a role with permissions you do not have")
+			}
+		}
+	}
+	var updated db.Member
+	if request.CustomRoleID != "" {
+		updated, err = h.queries.AssignOrganizationCustomRole(
+			c.Context(),
+			db.AssignOrganizationCustomRoleParams{
+				OrganizationID: access.Org.ID, UserID: c.Params("userId"),
+				CustomRoleID: request.CustomRoleID,
+			},
+		)
+	} else {
+		updated, err = h.queries.UpdateOrganizationMemberRole(c.Context(), db.UpdateOrganizationMemberRoleParams{
+			OrganizationID: access.Org.ID, UserID: c.Params("userId"), Role: request.Role,
+		})
+	}
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return jsonError(c, fiber.StatusBadRequest, "Select a valid organization role")
+		}
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to update member")
 	}
 	h.recordOrganizationAudit(c, access, "organization_member_role_updated", "user", c.Params("userId"), "", target, updated)
 	h.createNotification(
 		c.Context(), h.queries, c.Params("userId"), "organization",
 		"Organization role updated",
-		fmt.Sprintf("Your role in %s is now %s.", access.Org.Name, request.Role),
+		fmt.Sprintf("Your access role in %s was updated.", access.Org.Name),
 		fmt.Sprintf("/organizations/%s", access.Org.Slug),
 	)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
 func (h *Handler) deleteOrganizationWorkspaceMember(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c, "owner", "admin")
+	access, ok := h.organizationPermissionAccess(c, permissionMembersRemove)
 	if !ok {
 		return nil
 	}
@@ -260,7 +307,7 @@ func (h *Handler) deleteOrganizationWorkspaceMember(c fiber.Ctx) error {
 	if err != nil {
 		return jsonError(c, fiber.StatusNotFound, "Organization member not found")
 	}
-	if target.Role == "owner" || (access.Org.Role == "admin" && target.Role != "member") {
+	if target.Role == "owner" || (access.Org.Role != "owner" && target.Role != "member") {
 		return jsonError(c, fiber.StatusForbidden, "You cannot remove this member")
 	}
 	tx, err := h.pool.Begin(c.Context())
@@ -296,7 +343,7 @@ func (h *Handler) deleteOrganizationWorkspaceMember(c fiber.Ctx) error {
 }
 
 func (h *Handler) inviteOrganizationWorkspaceMember(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c, "owner", "admin")
+	access, ok := h.organizationPermissionAccess(c, permissionMembersInvite)
 	if !ok {
 		return nil
 	}
@@ -389,7 +436,7 @@ func (h *Handler) inviteOrganizationWorkspaceMember(c fiber.Ctx) error {
 }
 
 func (h *Handler) cancelOrganizationWorkspaceInvitation(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c, "owner", "admin")
+	access, ok := h.organizationPermissionAccess(c, permissionMembersInvite)
 	if !ok {
 		return nil
 	}
@@ -404,7 +451,7 @@ func (h *Handler) cancelOrganizationWorkspaceInvitation(c fiber.Ctx) error {
 }
 
 func (h *Handler) listOrganizationWorkspaceTeams(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c)
+	access, ok := h.organizationPermissionAccess(c, permissionTeamsRead)
 	if !ok {
 		return nil
 	}
@@ -454,7 +501,7 @@ func (h *Handler) activateOrganizationTeam(c fiber.Ctx) error {
 }
 
 func (h *Handler) createOrganizationWorkspaceTeam(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c, "owner", "admin")
+	access, ok := h.organizationPermissionAccess(c, permissionTeamsCreate)
 	if !ok {
 		return nil
 	}
@@ -482,7 +529,7 @@ func (h *Handler) createOrganizationWorkspaceTeam(c fiber.Ctx) error {
 }
 
 func (h *Handler) updateOrganizationWorkspaceTeam(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c, "owner", "admin")
+	access, ok := h.organizationPermissionAccess(c, permissionTeamsUpdate)
 	if !ok {
 		return nil
 	}
@@ -515,7 +562,7 @@ func (h *Handler) updateOrganizationWorkspaceTeam(c fiber.Ctx) error {
 }
 
 func (h *Handler) archiveOrganizationWorkspaceTeam(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c, "owner", "admin")
+	access, ok := h.organizationPermissionAccess(c, permissionTeamsUpdate)
 	if !ok {
 		return nil
 	}
@@ -552,7 +599,7 @@ func (h *Handler) archiveOrganizationWorkspaceTeam(c fiber.Ctx) error {
 }
 
 func (h *Handler) deleteOrganizationWorkspaceTeam(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c, "owner")
+	access, ok := h.organizationPermissionAccess(c, permissionTeamsDelete)
 	if !ok {
 		return nil
 	}
@@ -585,7 +632,7 @@ func (h *Handler) deleteOrganizationWorkspaceTeam(c fiber.Ctx) error {
 }
 
 func (h *Handler) listOrganizationWorkspaceTeamMembers(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c)
+	access, ok := h.organizationPermissionAccess(c, permissionTeamsRead)
 	if !ok {
 		return nil
 	}
@@ -604,7 +651,7 @@ func (h *Handler) listOrganizationWorkspaceTeamMembers(c fiber.Ctx) error {
 }
 
 func (h *Handler) addOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c, "owner", "admin")
+	access, ok := h.organizationPermissionAccess(c, permissionTeamMembersManage)
 	if !ok {
 		return nil
 	}
@@ -642,7 +689,7 @@ func (h *Handler) addOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
 }
 
 func (h *Handler) deleteOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c, "owner", "admin")
+	access, ok := h.organizationPermissionAccess(c, permissionTeamMembersManage)
 	if !ok {
 		return nil
 	}
@@ -686,7 +733,7 @@ func (h *Handler) deleteOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
 }
 
 func (h *Handler) bulkOrganizationWorkspaceTeamMembers(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c, "owner", "admin")
+	access, ok := h.organizationPermissionAccess(c, permissionTeamMembersManage)
 	if !ok {
 		return nil
 	}
@@ -901,7 +948,7 @@ func (h *Handler) listOrganizationTeamActivity(c fiber.Ctx) error {
 }
 
 func (h *Handler) listOrganizationWorkspaceAudit(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c, "owner")
+	access, ok := h.organizationPermissionAccess(c, permissionAuditRead)
 	if !ok {
 		return nil
 	}

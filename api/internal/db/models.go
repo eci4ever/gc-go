@@ -60,6 +60,7 @@ type Member struct {
 	UserID         string           `json:"userId"`
 	Role           string           `json:"role"`
 	CreatedAt      pgtype.Timestamp `json:"createdAt"`
+	CustomRoleID   pgtype.Text      `json:"customRoleId"`
 }
 
 type Notification struct {
@@ -82,6 +83,21 @@ type Organization struct {
 	UpdatedAt pgtype.Timestamp `json:"updatedAt"`
 	Metadata  pgtype.Text      `json:"metadata"`
 	DeletedAt pgtype.Timestamp `json:"deletedAt"`
+}
+
+type OrganizationRole struct {
+	ID             string           `json:"id"`
+	OrganizationID string           `json:"organizationId"`
+	Name           string           `json:"name"`
+	Description    string           `json:"description"`
+	CreatedBy      string           `json:"createdBy"`
+	CreatedAt      pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt      pgtype.Timestamp `json:"updatedAt"`
+}
+
+type OrganizationRolePermission struct {
+	RoleID        string `json:"roleId"`
+	PermissionKey string `json:"permissionKey"`
 }
 
 type Session struct {

@@ -1,6 +1,6 @@
-import * as React from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useRouterState } from '@tanstack/react-router'
+import * as React from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   ChevronsUpDownIcon,
   Building2Icon,
@@ -8,14 +8,15 @@ import {
   GaugeIcon,
   LayoutDashboardIcon,
   ShieldCheckIcon,
+  KeyRoundIcon,
   UserRoundIcon,
   UsersIcon,
-} from 'lucide-react'
-import { toast } from 'sonner'
+} from "lucide-react";
+import { toast } from "sonner";
 
-import type { AuthUser } from '@/lib/auth'
-import { NavUser } from '@/components/nav-user'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import type { AuthUser } from "@/lib/auth";
+import { NavUser } from "@/components/nav-user";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,11 +25,11 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+} from "@/components/ui/dropdown-menu";
 import {
   activateOrganization,
   organizationsQueryOptions,
-} from '@/lib/organizations'
+} from "@/lib/organizations";
 import {
   Sidebar,
   SidebarContent,
@@ -41,43 +42,43 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-} from '@/components/ui/sidebar'
+} from "@/components/ui/sidebar";
 
 const navigation = [
   {
-    title: 'Dashboard',
-    to: '/dashboard' as const,
+    title: "Dashboard",
+    to: "/dashboard" as const,
     icon: LayoutDashboardIcon,
   },
   {
-    title: 'Account',
-    to: '/account' as const,
+    title: "Account",
+    to: "/account" as const,
     icon: UserRoundIcon,
   },
-]
+];
 
 const adminNavigation = [
   {
-    title: 'Overview',
-    to: '/admin' as const,
+    title: "Overview",
+    to: "/admin" as const,
     icon: GaugeIcon,
   },
   {
-    title: 'Users',
-    to: '/admin/users' as const,
+    title: "Users",
+    to: "/admin/users" as const,
     icon: UsersIcon,
   },
   {
-    title: 'Organizations',
-    to: '/admin/organizations' as const,
+    title: "Organizations",
+    to: "/admin/organizations" as const,
     icon: Building2Icon,
   },
   {
-    title: 'Audit Log',
-    to: '/admin/audit' as const,
+    title: "Audit Log",
+    to: "/admin/audit" as const,
     icon: FileClockIcon,
   },
-]
+];
 
 export function AppSidebar({
   user,
@@ -86,43 +87,44 @@ export function AppSidebar({
   platformAdmin,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
-  user: AuthUser
-  onLogout: () => void
-  loggingOut: boolean
-  platformAdmin: boolean
+  user: AuthUser;
+  onLogout: () => void;
+  loggingOut: boolean;
+  platformAdmin: boolean;
 }) {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
-  })
-  const queryClient = useQueryClient()
-  const organizations = useQuery(organizationsQueryOptions)
+  });
+  const queryClient = useQueryClient();
+  const organizations = useQuery(organizationsQueryOptions);
   const active =
-    organizations.data?.organizations.find(
-      (item) => pathname.startsWith(`/organizations/${item.slug}`),
+    organizations.data?.organizations.find((item) =>
+      pathname.startsWith(`/organizations/${item.slug}`),
     ) ??
     organizations.data?.organizations.find(
       (item) => item.id === organizations.data?.activeOrganizationId,
     ) ??
-    organizations.data?.organizations[0]
+    organizations.data?.organizations[0];
   const activate = useMutation({
     mutationFn: activateOrganization,
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ['organizations'] }),
+      queryClient.invalidateQueries({ queryKey: ["organizations"] }),
     onError: (error) => toast.error(error.message),
-  })
+  });
   const organizationNavigation = active
     ? [
-        { title: 'Overview', suffix: '', icon: GaugeIcon },
-        { title: 'Members', suffix: '/members', icon: UsersIcon },
-        { title: 'Teams', suffix: '/teams', icon: Building2Icon },
-        ...(active.role === 'owner'
+        { title: "Overview", suffix: "", icon: GaugeIcon },
+        { title: "Members", suffix: "/members", icon: UsersIcon },
+        { title: "Teams", suffix: "/teams", icon: Building2Icon },
+        ...(active.role === "owner"
           ? [
-              { title: 'Audit Log', suffix: '/audit', icon: FileClockIcon },
-              { title: 'Settings', suffix: '/settings', icon: ShieldCheckIcon },
+              { title: "Audit Log", suffix: "/audit", icon: FileClockIcon },
+              { title: "Roles", suffix: "/roles", icon: KeyRoundIcon },
+              { title: "Settings", suffix: "/settings", icon: ShieldCheckIcon },
             ]
           : []),
       ]
-    : []
+    : [];
 
   return (
     <Sidebar collapsible="icon" {...props}>
@@ -131,19 +133,21 @@ export function AppSidebar({
           <SidebarMenuItem>
             <DropdownMenu>
               <DropdownMenuTrigger
-                render={<SidebarMenuButton size="lg" tooltip="Switch organization" />}
+                render={
+                  <SidebarMenuButton size="lg" tooltip="Switch organization" />
+                }
               >
                 <Avatar>
                   <AvatarFallback className="bg-primary text-primary-foreground">
-                    {active ? active.name.slice(0, 2).toUpperCase() : 'GC'}
+                    {active ? active.name.slice(0, 2).toUpperCase() : "GC"}
                   </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-semibold">
-                    {active?.name ?? 'GC Go'}
+                    {active?.name ?? "GC Go"}
                   </span>
                   <span className="truncate text-xs capitalize">
-                    {active?.role ?? 'Personal workspace'}
+                    {active?.role ?? "Personal workspace"}
                   </span>
                 </div>
                 <ChevronsUpDownIcon className="ml-auto size-4" />
@@ -212,7 +216,7 @@ export function AppSidebar({
             <SidebarGroupContent>
               <SidebarMenu>
                 {organizationNavigation.map((item) => {
-                  const to = `/organizations/${active.slug}${item.suffix}`
+                  const to = `/organizations/${active.slug}${item.suffix}`;
                   return (
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton
@@ -224,7 +228,7 @@ export function AppSidebar({
                         <span>{item.title}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
-                  )
+                  );
                 })}
               </SidebarMenu>
             </SidebarGroupContent>
@@ -253,13 +257,9 @@ export function AppSidebar({
         ) : null}
       </SidebarContent>
       <SidebarFooter className="group-data-[collapsible=icon]:px-3">
-        <NavUser
-          user={user}
-          onLogout={onLogout}
-          loggingOut={loggingOut}
-        />
+        <NavUser user={user} onLogout={onLogout} loggingOut={loggingOut} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
-  )
+  );
 }

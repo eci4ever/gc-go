@@ -38,6 +38,38 @@ func TestContainsOrganizationRole(t *testing.T) {
 	}
 }
 
+func TestValidPermissionKeys(t *testing.T) {
+	keys, ok := validPermissionKeys([]string{
+		permissionTeamsCreate,
+		permissionMembersRead,
+		permissionTeamsCreate,
+	})
+	if !ok {
+		t.Fatal("known permission keys were rejected")
+	}
+	if len(keys) != 2 || keys[0] != permissionTeamsCreate || keys[1] != permissionMembersRead {
+		t.Fatalf("permission keys = %#v, want unique keys in request order", keys)
+	}
+	if _, ok := validPermissionKeys([]string{"system.delete_everything"}); ok {
+		t.Fatal("unknown permission key was accepted")
+	}
+}
+
+func TestContainsEveryPermission(t *testing.T) {
+	if !containsEveryPermission(
+		[]string{permissionMembersRead, permissionTeamsCreate},
+		[]string{permissionTeamsCreate},
+	) {
+		t.Fatal("permission subset was rejected")
+	}
+	if containsEveryPermission(
+		[]string{permissionMembersRead},
+		[]string{permissionTeamsCreate},
+	) {
+		t.Fatal("permission escalation was accepted")
+	}
+}
+
 func TestSessionTokenIsHashed(t *testing.T) {
 	t.Parallel()
 

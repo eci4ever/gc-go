@@ -30,6 +30,21 @@ func (q *Queries) AcceptOrganizationInvitation(ctx context.Context, arg AcceptOr
 	return err
 }
 
+const addOrganizationRolePermission = `-- name: AddOrganizationRolePermission :exec
+INSERT INTO organization_role_permissions (role_id, permission_key)
+VALUES ($1, $2)
+`
+
+type AddOrganizationRolePermissionParams struct {
+	RoleID        string `json:"roleId"`
+	PermissionKey string `json:"permissionKey"`
+}
+
+func (q *Queries) AddOrganizationRolePermission(ctx context.Context, arg AddOrganizationRolePermissionParams) error {
+	_, err := q.db.Exec(ctx, addOrganizationRolePermission, arg.RoleID, arg.PermissionKey)
+	return err
+}
+
 const addOrganizationTeamMember = `-- name: AddOrganizationTeamMember :execrows
 INSERT INTO team_members (id, team_id, user_id, created_at)
 SELECT
@@ -433,7 +448,7 @@ const adminDeleteOrganizationMember = `-- name: AdminDeleteOrganizationMember :o
 DELETE FROM members
 WHERE organization_id = $1
   AND user_id = $2
-RETURNING id, organization_id, user_id, role, created_at
+RETURNING id, organization_id, user_id, role, created_at, custom_role_id
 `
 
 type AdminDeleteOrganizationMemberParams struct {
@@ -450,13 +465,14 @@ func (q *Queries) AdminDeleteOrganizationMember(ctx context.Context, arg AdminDe
 		&i.UserID,
 		&i.Role,
 		&i.CreatedAt,
+		&i.CustomRoleID,
 	)
 	return i, err
 }
 
 const adminDemoteOrganizationOwners = `-- name: AdminDemoteOrganizationOwners :exec
 UPDATE members
-SET role = 'member'
+SET role = 'member', custom_role_id = NULL
 WHERE organization_id = $1
   AND role = 'owner'
 `
@@ -489,7 +505,7 @@ func (q *Queries) AdminGetOrganization(ctx context.Context, id string) (Organiza
 }
 
 const adminGetOrganizationMember = `-- name: AdminGetOrganizationMember :one
-SELECT id, organization_id, user_id, role, created_at
+SELECT id, organization_id, user_id, role, created_at, custom_role_id
 FROM members
 WHERE organization_id = $1
   AND user_id = $2
@@ -509,6 +525,7 @@ func (q *Queries) AdminGetOrganizationMember(ctx context.Context, arg AdminGetOr
 		&i.UserID,
 		&i.Role,
 		&i.CreatedAt,
+		&i.CustomRoleID,
 	)
 	return i, err
 }
@@ -1218,7 +1235,7 @@ INSERT INTO members (
     (now() AT TIME ZONE 'UTC')
 )
 ON CONFLICT (organization_id, user_id) DO UPDATE
-SET role = excluded.role
+SET role = excluded.role, custom_role_id = NULL
 `
 
 type AdminUpsertOrganizationMemberParams struct {
@@ -1253,7 +1270,7 @@ INSERT INTO members (
     (now() AT TIME ZONE 'UTC')
 )
 ON CONFLICT (organization_id, user_id) DO UPDATE
-SET role = 'owner'
+SET role = 'owner', custom_role_id = NULL
 `
 
 type AdminUpsertOrganizationOwnerParams struct {
@@ -1306,6 +1323,39 @@ func (q *Queries) AdminUserGrowth(ctx context.Context) ([]AdminUserGrowthRow, er
 		return nil, err
 	}
 	return items, nil
+}
+
+const assignOrganizationCustomRole = `-- name: AssignOrganizationCustomRole :one
+UPDATE members
+SET role = 'member', custom_role_id = $1::text
+WHERE organization_id = $2::text
+  AND user_id = $3::text
+  AND EXISTS (
+      SELECT 1 FROM organization_roles
+      WHERE id = $1::text
+        AND organization_id = $2::text
+  )
+RETURNING id, organization_id, user_id, role, created_at, custom_role_id
+`
+
+type AssignOrganizationCustomRoleParams struct {
+	CustomRoleID   string `json:"customRoleId"`
+	OrganizationID string `json:"organizationId"`
+	UserID         string `json:"userId"`
+}
+
+func (q *Queries) AssignOrganizationCustomRole(ctx context.Context, arg AssignOrganizationCustomRoleParams) (Member, error) {
+	row := q.db.QueryRow(ctx, assignOrganizationCustomRole, arg.CustomRoleID, arg.OrganizationID, arg.UserID)
+	var i Member
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.CreatedAt,
+		&i.CustomRoleID,
+	)
+	return i, err
 }
 
 const bulkAddOrganizationTeamMembers = `-- name: BulkAddOrganizationTeamMembers :execrows
@@ -1819,6 +1869,42 @@ func (q *Queries) CreateOrganizationAuditEvent(ctx context.Context, arg CreateOr
 	return err
 }
 
+const createOrganizationCustomRole = `-- name: CreateOrganizationCustomRole :one
+INSERT INTO organization_roles (
+    id, organization_id, name, description, created_by
+) VALUES ($1, $2, $3, $4, $5)
+RETURNING id, organization_id, name, description, created_by, created_at, updated_at
+`
+
+type CreateOrganizationCustomRoleParams struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	CreatedBy      string `json:"createdBy"`
+}
+
+func (q *Queries) CreateOrganizationCustomRole(ctx context.Context, arg CreateOrganizationCustomRoleParams) (OrganizationRole, error) {
+	row := q.db.QueryRow(ctx, createOrganizationCustomRole,
+		arg.ID,
+		arg.OrganizationID,
+		arg.Name,
+		arg.Description,
+		arg.CreatedBy,
+	)
+	var i OrganizationRole
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createOrganizationTeam = `-- name: CreateOrganizationTeam :one
 INSERT INTO teams (
     id, name, description, organization_id, lead_user_id, created_at, updated_at
@@ -2003,10 +2089,28 @@ func (q *Queries) DeleteEmailVerification(ctx context.Context, id string) error 
 	return err
 }
 
+const deleteOrganizationCustomRole = `-- name: DeleteOrganizationCustomRole :execrows
+DELETE FROM organization_roles
+WHERE id = $1 AND organization_id = $2
+`
+
+type DeleteOrganizationCustomRoleParams struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) DeleteOrganizationCustomRole(ctx context.Context, arg DeleteOrganizationCustomRoleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOrganizationCustomRole, arg.ID, arg.OrganizationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteOrganizationMember = `-- name: DeleteOrganizationMember :one
 DELETE FROM members
 WHERE organization_id = $1 AND user_id = $2
-RETURNING id, organization_id, user_id, role, created_at
+RETURNING id, organization_id, user_id, role, created_at, custom_role_id
 `
 
 type DeleteOrganizationMemberParams struct {
@@ -2023,6 +2127,7 @@ func (q *Queries) DeleteOrganizationMember(ctx context.Context, arg DeleteOrgani
 		&i.UserID,
 		&i.Role,
 		&i.CreatedAt,
+		&i.CustomRoleID,
 	)
 	return i, err
 }
@@ -2297,6 +2402,31 @@ func (q *Queries) GetCredentialUserByEmail(ctx context.Context, lower string) (G
 	return i, err
 }
 
+const getOrganizationCustomRole = `-- name: GetOrganizationCustomRole :one
+SELECT id, organization_id, name, description, created_by, created_at, updated_at FROM organization_roles
+WHERE id = $1 AND organization_id = $2
+`
+
+type GetOrganizationCustomRoleParams struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) GetOrganizationCustomRole(ctx context.Context, arg GetOrganizationCustomRoleParams) (OrganizationRole, error) {
+	row := q.db.QueryRow(ctx, getOrganizationCustomRole, arg.ID, arg.OrganizationID)
+	var i OrganizationRole
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getOrganizationInvitationForAcceptance = `-- name: GetOrganizationInvitationForAcceptance :one
 SELECT
     invitations.id,
@@ -2353,6 +2483,7 @@ SELECT
     organizations.id, organizations.name, organizations.slug,
     organizations.logo, organizations.metadata, organizations.created_at,
     organizations.updated_at, members.role,
+    members.custom_role_id,
     members.created_at AS member_since
 FROM members
 JOIN organizations ON organizations.id = members.organization_id
@@ -2366,15 +2497,16 @@ type GetOrganizationMembershipParams struct {
 }
 
 type GetOrganizationMembershipRow struct {
-	ID          string           `json:"id"`
-	Name        string           `json:"name"`
-	Slug        string           `json:"slug"`
-	Logo        pgtype.Text      `json:"logo"`
-	Metadata    pgtype.Text      `json:"metadata"`
-	CreatedAt   pgtype.Timestamp `json:"createdAt"`
-	UpdatedAt   pgtype.Timestamp `json:"updatedAt"`
-	Role        string           `json:"role"`
-	MemberSince pgtype.Timestamp `json:"memberSince"`
+	ID           string           `json:"id"`
+	Name         string           `json:"name"`
+	Slug         string           `json:"slug"`
+	Logo         pgtype.Text      `json:"logo"`
+	Metadata     pgtype.Text      `json:"metadata"`
+	CreatedAt    pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt    pgtype.Timestamp `json:"updatedAt"`
+	Role         string           `json:"role"`
+	CustomRoleID pgtype.Text      `json:"customRoleId"`
+	MemberSince  pgtype.Timestamp `json:"memberSince"`
 }
 
 func (q *Queries) GetOrganizationMembership(ctx context.Context, arg GetOrganizationMembershipParams) (GetOrganizationMembershipRow, error) {
@@ -2389,6 +2521,7 @@ func (q *Queries) GetOrganizationMembership(ctx context.Context, arg GetOrganiza
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Role,
+		&i.CustomRoleID,
 		&i.MemberSince,
 	)
 	return i, err
@@ -2755,6 +2888,40 @@ func (q *Queries) ListAccessibleOrganizationTeams(ctx context.Context, arg ListA
 	return items, nil
 }
 
+const listMemberCustomPermissions = `-- name: ListMemberCustomPermissions :many
+SELECT organization_role_permissions.permission_key
+FROM members
+JOIN organization_role_permissions
+  ON organization_role_permissions.role_id = members.custom_role_id
+WHERE members.organization_id = $1 AND members.user_id = $2
+ORDER BY organization_role_permissions.permission_key
+`
+
+type ListMemberCustomPermissionsParams struct {
+	OrganizationID string `json:"organizationId"`
+	UserID         string `json:"userId"`
+}
+
+func (q *Queries) ListMemberCustomPermissions(ctx context.Context, arg ListMemberCustomPermissionsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listMemberCustomPermissions, arg.OrganizationID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var permission_key string
+		if err := rows.Scan(&permission_key); err != nil {
+			return nil, err
+		}
+		items = append(items, permission_key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrganizationAuditEvents = `-- name: ListOrganizationAuditEvents :many
 SELECT
     auth_events.id, auth_events.event_type, auth_events.target_type,
@@ -2825,6 +2992,66 @@ func (q *Queries) ListOrganizationAuditEvents(ctx context.Context, arg ListOrgan
 	return items, nil
 }
 
+const listOrganizationCustomRoles = `-- name: ListOrganizationCustomRoles :many
+SELECT
+    organization_roles.id, organization_roles.organization_id,
+    organization_roles.name, organization_roles.description,
+    organization_roles.created_at, organization_roles.updated_at,
+    coalesce(
+        array_agg(organization_role_permissions.permission_key ORDER BY organization_role_permissions.permission_key)
+            FILTER (WHERE organization_role_permissions.permission_key IS NOT NULL),
+        ARRAY[]::text[]
+    )::text[] AS permissions,
+    count(DISTINCT members.id)::int AS member_count
+FROM organization_roles
+LEFT JOIN organization_role_permissions
+    ON organization_role_permissions.role_id = organization_roles.id
+LEFT JOIN members ON members.custom_role_id = organization_roles.id
+WHERE organization_roles.organization_id = $1
+GROUP BY organization_roles.id
+ORDER BY organization_roles.name
+`
+
+type ListOrganizationCustomRolesRow struct {
+	ID             string           `json:"id"`
+	OrganizationID string           `json:"organizationId"`
+	Name           string           `json:"name"`
+	Description    string           `json:"description"`
+	CreatedAt      pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt      pgtype.Timestamp `json:"updatedAt"`
+	Permissions    []string         `json:"permissions"`
+	MemberCount    int32            `json:"memberCount"`
+}
+
+func (q *Queries) ListOrganizationCustomRoles(ctx context.Context, organizationID string) ([]ListOrganizationCustomRolesRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationCustomRoles, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrganizationCustomRolesRow
+	for rows.Next() {
+		var i ListOrganizationCustomRolesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Permissions,
+			&i.MemberCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrganizationInvitations = `-- name: ListOrganizationInvitations :many
 SELECT
     invitations.id, invitations.email, invitations.role, invitations.status,
@@ -2880,11 +3107,13 @@ func (q *Queries) ListOrganizationInvitations(ctx context.Context, organizationI
 
 const listOrganizationMembers = `-- name: ListOrganizationMembers :many
 SELECT
-    members.id, members.role, members.created_at,
+    members.id, members.role, members.custom_role_id, members.created_at,
+    organization_roles.name AS custom_role_name,
     users.id AS user_id, users.name, users.email, users.image,
     users.email_verified
 FROM members
 JOIN users ON users.id = members.user_id
+LEFT JOIN organization_roles ON organization_roles.id = members.custom_role_id
 WHERE members.organization_id = $1 AND users.deleted_at IS NULL
 ORDER BY
     CASE members.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
@@ -2892,14 +3121,16 @@ ORDER BY
 `
 
 type ListOrganizationMembersRow struct {
-	ID            string           `json:"id"`
-	Role          string           `json:"role"`
-	CreatedAt     pgtype.Timestamp `json:"createdAt"`
-	UserID        string           `json:"userId"`
-	Name          string           `json:"name"`
-	Email         string           `json:"email"`
-	Image         pgtype.Text      `json:"image"`
-	EmailVerified bool             `json:"emailVerified"`
+	ID             string           `json:"id"`
+	Role           string           `json:"role"`
+	CustomRoleID   pgtype.Text      `json:"customRoleId"`
+	CreatedAt      pgtype.Timestamp `json:"createdAt"`
+	CustomRoleName pgtype.Text      `json:"customRoleName"`
+	UserID         string           `json:"userId"`
+	Name           string           `json:"name"`
+	Email          string           `json:"email"`
+	Image          pgtype.Text      `json:"image"`
+	EmailVerified  bool             `json:"emailVerified"`
 }
 
 func (q *Queries) ListOrganizationMembers(ctx context.Context, organizationID string) ([]ListOrganizationMembersRow, error) {
@@ -2914,7 +3145,9 @@ func (q *Queries) ListOrganizationMembers(ctx context.Context, organizationID st
 		if err := rows.Scan(
 			&i.ID,
 			&i.Role,
+			&i.CustomRoleID,
 			&i.CreatedAt,
+			&i.CustomRoleName,
 			&i.UserID,
 			&i.Name,
 			&i.Email,
@@ -2924,6 +3157,39 @@ func (q *Queries) ListOrganizationMembers(ctx context.Context, organizationID st
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationRolePermissionKeys = `-- name: ListOrganizationRolePermissionKeys :many
+SELECT organization_role_permissions.permission_key
+FROM organization_role_permissions
+JOIN organization_roles ON organization_roles.id = organization_role_permissions.role_id
+WHERE organization_roles.id = $1 AND organization_roles.organization_id = $2
+ORDER BY organization_role_permissions.permission_key
+`
+
+type ListOrganizationRolePermissionKeysParams struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) ListOrganizationRolePermissionKeys(ctx context.Context, arg ListOrganizationRolePermissionKeysParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listOrganizationRolePermissionKeys, arg.ID, arg.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var permission_key string
+		if err := rows.Scan(&permission_key); err != nil {
+			return nil, err
+		}
+		items = append(items, permission_key)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -3365,6 +3631,15 @@ func (q *Queries) Ping(ctx context.Context) (int32, error) {
 	return value, err
 }
 
+const replaceOrganizationRolePermissions = `-- name: ReplaceOrganizationRolePermissions :exec
+DELETE FROM organization_role_permissions WHERE role_id = $1
+`
+
+func (q *Queries) ReplaceOrganizationRolePermissions(ctx context.Context, roleID string) error {
+	_, err := q.db.Exec(ctx, replaceOrganizationRolePermissions, roleID)
+	return err
+}
+
 const revokeUserSession = `-- name: RevokeUserSession :one
 DELETE FROM sessions
 WHERE id = $1
@@ -3487,7 +3762,8 @@ SET role = CASE
     WHEN user_id = $1::text THEN 'owner'
     WHEN role = 'owner' THEN 'admin'
     ELSE role
-END
+END,
+custom_role_id = NULL
 WHERE organization_id = $2::text
   AND (role = 'owner' OR user_id = $1::text)
 `
@@ -3521,10 +3797,44 @@ func (q *Queries) UpdateCredentialPassword(ctx context.Context, arg UpdateCreden
 	return err
 }
 
+const updateOrganizationCustomRole = `-- name: UpdateOrganizationCustomRole :one
+UPDATE organization_roles
+SET name = $3, description = $4
+WHERE id = $1 AND organization_id = $2
+RETURNING id, organization_id, name, description, created_by, created_at, updated_at
+`
+
+type UpdateOrganizationCustomRoleParams struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+}
+
+func (q *Queries) UpdateOrganizationCustomRole(ctx context.Context, arg UpdateOrganizationCustomRoleParams) (OrganizationRole, error) {
+	row := q.db.QueryRow(ctx, updateOrganizationCustomRole,
+		arg.ID,
+		arg.OrganizationID,
+		arg.Name,
+		arg.Description,
+	)
+	var i OrganizationRole
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateOrganizationMemberRole = `-- name: UpdateOrganizationMemberRole :one
-UPDATE members SET role = $3
+UPDATE members SET role = $3, custom_role_id = NULL
 WHERE organization_id = $1 AND user_id = $2
-RETURNING id, organization_id, user_id, role, created_at
+RETURNING id, organization_id, user_id, role, created_at, custom_role_id
 `
 
 type UpdateOrganizationMemberRoleParams struct {
@@ -3542,6 +3852,7 @@ func (q *Queries) UpdateOrganizationMemberRole(ctx context.Context, arg UpdateOr
 		&i.UserID,
 		&i.Role,
 		&i.CreatedAt,
+		&i.CustomRoleID,
 	)
 	return i, err
 }

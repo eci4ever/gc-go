@@ -974,6 +974,64 @@ func TestAuthFlowIntegration(t *testing.T) {
 	}
 	memberCreateTeamResponse.Body.Close()
 
+	customRoleResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/roles",
+		map[string]any{
+			"name":        "Team creator",
+			"description": "Can create organization teams",
+			"permissions": []string{permissionTeamsCreate},
+		},
+		adminCookies[0],
+	)
+	if customRoleResponse.StatusCode != http.StatusCreated {
+		t.Fatalf(
+			"create custom role status = %d, want %d",
+			customRoleResponse.StatusCode,
+			http.StatusCreated,
+		)
+	}
+	var customRoleBody struct {
+		Role db.OrganizationRole `json:"role"`
+	}
+	decodeResponse(t, customRoleResponse, &customRoleBody)
+
+	assignCustomRoleResponse := authRequest(
+		t,
+		app,
+		http.MethodPut,
+		"/api/organizations/"+managedSlug+"/members/"+managedUserBody.User.ID,
+		map[string]any{"customRoleId": customRoleBody.Role.ID},
+		adminCookies[0],
+	)
+	if assignCustomRoleResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"assign custom role status = %d, want %d",
+			assignCustomRoleResponse.StatusCode,
+			http.StatusNoContent,
+		)
+	}
+	assignCustomRoleResponse.Body.Close()
+
+	customRoleCreateTeamResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams",
+		map[string]any{"name": "Custom role team"},
+		impersonatedCookies[0],
+	)
+	if customRoleCreateTeamResponse.StatusCode != http.StatusCreated {
+		t.Fatalf(
+			"custom role create team status = %d, want %d",
+			customRoleCreateTeamResponse.StatusCode,
+			http.StatusCreated,
+		)
+	}
+	customRoleCreateTeamResponse.Body.Close()
+
 	ownerCreateTeamResponse := authRequest(
 		t,
 		app,

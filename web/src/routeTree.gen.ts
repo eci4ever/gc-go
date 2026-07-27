@@ -30,6 +30,7 @@ import { Route as ProtectedAdminOrganizationsOrganizationIdRouteImport } from '.
 import { Route as ProtectedOrganizationsOrganizationSlugIndexRouteImport } from './routes/_protected/organizations/$organizationSlug/index'
 import { Route as ProtectedOrganizationsOrganizationSlugAuditRouteImport } from './routes/_protected/organizations/$organizationSlug/audit'
 import { Route as ProtectedOrganizationsOrganizationSlugMembersRouteImport } from './routes/_protected/organizations/$organizationSlug/members'
+import { Route as ProtectedOrganizationsOrganizationSlugRolesRouteImport } from './routes/_protected/organizations/$organizationSlug/roles'
 import { Route as ProtectedOrganizationsOrganizationSlugSettingsRouteImport } from './routes/_protected/organizations/$organizationSlug/settings'
 import { Route as ProtectedOrganizationsOrganizationSlugTeamsRouteImport } from './routes/_protected/organizations/$organizationSlug/teams'
 import { Route as ProtectedOrganizationsOrganizationSlugTeamsIndexRouteImport } from './routes/_protected/organizations/$organizationSlug/teams/index'
@@ -145,6 +146,12 @@ const ProtectedOrganizationsOrganizationSlugMembersRoute =
     path: '/members',
     getParentRoute: () => ProtectedOrganizationsOrganizationSlugRoute,
   } as any)
+const ProtectedOrganizationsOrganizationSlugRolesRoute =
+  ProtectedOrganizationsOrganizationSlugRolesRouteImport.update({
+    id: '/roles',
+    path: '/roles',
+    getParentRoute: () => ProtectedOrganizationsOrganizationSlugRoute,
+  } as any)
 const ProtectedOrganizationsOrganizationSlugSettingsRoute =
   ProtectedOrganizationsOrganizationSlugSettingsRouteImport.update({
     id: '/settings',
@@ -190,6 +197,7 @@ export interface FileRoutesByFullPath {
   '/admin/organizations/$organizationId': typeof ProtectedAdminOrganizationsOrganizationIdRoute
   '/organizations/$organizationSlug/audit': typeof ProtectedOrganizationsOrganizationSlugAuditRoute
   '/organizations/$organizationSlug/members': typeof ProtectedOrganizationsOrganizationSlugMembersRoute
+  '/organizations/$organizationSlug/roles': typeof ProtectedOrganizationsOrganizationSlugRolesRoute
   '/organizations/$organizationSlug/settings': typeof ProtectedOrganizationsOrganizationSlugSettingsRoute
   '/organizations/$organizationSlug/teams': typeof ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren
   '/organizations/$organizationSlug/': typeof ProtectedOrganizationsOrganizationSlugIndexRoute
@@ -214,6 +222,7 @@ export interface FileRoutesByTo {
   '/admin/organizations/$organizationId': typeof ProtectedAdminOrganizationsOrganizationIdRoute
   '/organizations/$organizationSlug/audit': typeof ProtectedOrganizationsOrganizationSlugAuditRoute
   '/organizations/$organizationSlug/members': typeof ProtectedOrganizationsOrganizationSlugMembersRoute
+  '/organizations/$organizationSlug/roles': typeof ProtectedOrganizationsOrganizationSlugRolesRoute
   '/organizations/$organizationSlug/settings': typeof ProtectedOrganizationsOrganizationSlugSettingsRoute
   '/organizations/$organizationSlug': typeof ProtectedOrganizationsOrganizationSlugIndexRoute
   '/organizations/$organizationSlug/teams/$teamId': typeof ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute
@@ -241,6 +250,7 @@ export interface FileRoutesById {
   '/_protected/admin/organizations/$organizationId': typeof ProtectedAdminOrganizationsOrganizationIdRoute
   '/_protected/organizations/$organizationSlug/audit': typeof ProtectedOrganizationsOrganizationSlugAuditRoute
   '/_protected/organizations/$organizationSlug/members': typeof ProtectedOrganizationsOrganizationSlugMembersRoute
+  '/_protected/organizations/$organizationSlug/roles': typeof ProtectedOrganizationsOrganizationSlugRolesRoute
   '/_protected/organizations/$organizationSlug/settings': typeof ProtectedOrganizationsOrganizationSlugSettingsRoute
   '/_protected/organizations/$organizationSlug/teams': typeof ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren
   '/_protected/organizations/$organizationSlug/': typeof ProtectedOrganizationsOrganizationSlugIndexRoute
@@ -269,6 +279,7 @@ export interface FileRouteTypes {
     | '/admin/organizations/$organizationId'
     | '/organizations/$organizationSlug/audit'
     | '/organizations/$organizationSlug/members'
+    | '/organizations/$organizationSlug/roles'
     | '/organizations/$organizationSlug/settings'
     | '/organizations/$organizationSlug/teams'
     | '/organizations/$organizationSlug/'
@@ -293,6 +304,7 @@ export interface FileRouteTypes {
     | '/admin/organizations/$organizationId'
     | '/organizations/$organizationSlug/audit'
     | '/organizations/$organizationSlug/members'
+    | '/organizations/$organizationSlug/roles'
     | '/organizations/$organizationSlug/settings'
     | '/organizations/$organizationSlug'
     | '/organizations/$organizationSlug/teams/$teamId'
@@ -319,6 +331,7 @@ export interface FileRouteTypes {
     | '/_protected/admin/organizations/$organizationId'
     | '/_protected/organizations/$organizationSlug/audit'
     | '/_protected/organizations/$organizationSlug/members'
+    | '/_protected/organizations/$organizationSlug/roles'
     | '/_protected/organizations/$organizationSlug/settings'
     | '/_protected/organizations/$organizationSlug/teams'
     | '/_protected/organizations/$organizationSlug/'
@@ -487,6 +500,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedOrganizationsOrganizationSlugMembersRouteImport
       parentRoute: typeof ProtectedOrganizationsOrganizationSlugRoute
     }
+    '/_protected/organizations/$organizationSlug/roles': {
+      id: '/_protected/organizations/$organizationSlug/roles'
+      path: '/roles'
+      fullPath: '/organizations/$organizationSlug/roles'
+      preLoaderRoute: typeof ProtectedOrganizationsOrganizationSlugRolesRouteImport
+      parentRoute: typeof ProtectedOrganizationsOrganizationSlugRoute
+    }
     '/_protected/organizations/$organizationSlug/settings': {
       id: '/_protected/organizations/$organizationSlug/settings'
       path: '/settings'
@@ -573,6 +593,7 @@ const ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren =
 interface ProtectedOrganizationsOrganizationSlugRouteChildren {
   ProtectedOrganizationsOrganizationSlugAuditRoute: typeof ProtectedOrganizationsOrganizationSlugAuditRoute
   ProtectedOrganizationsOrganizationSlugMembersRoute: typeof ProtectedOrganizationsOrganizationSlugMembersRoute
+  ProtectedOrganizationsOrganizationSlugRolesRoute: typeof ProtectedOrganizationsOrganizationSlugRolesRoute
   ProtectedOrganizationsOrganizationSlugSettingsRoute: typeof ProtectedOrganizationsOrganizationSlugSettingsRoute
   ProtectedOrganizationsOrganizationSlugTeamsRoute: typeof ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren
   ProtectedOrganizationsOrganizationSlugIndexRoute: typeof ProtectedOrganizationsOrganizationSlugIndexRoute
@@ -584,6 +605,8 @@ const ProtectedOrganizationsOrganizationSlugRouteChildren: ProtectedOrganization
       ProtectedOrganizationsOrganizationSlugAuditRoute,
     ProtectedOrganizationsOrganizationSlugMembersRoute:
       ProtectedOrganizationsOrganizationSlugMembersRoute,
+    ProtectedOrganizationsOrganizationSlugRolesRoute:
+      ProtectedOrganizationsOrganizationSlugRolesRoute,
     ProtectedOrganizationsOrganizationSlugSettingsRoute:
       ProtectedOrganizationsOrganizationSlugSettingsRoute,
     ProtectedOrganizationsOrganizationSlugTeamsRoute:

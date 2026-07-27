@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	AcceptOrganizationInvitation(ctx context.Context, arg AcceptOrganizationInvitationParams) error
+	AddOrganizationRolePermission(ctx context.Context, arg AddOrganizationRolePermissionParams) error
 	AddOrganizationTeamMember(ctx context.Context, arg AddOrganizationTeamMemberParams) (int64, error)
 	AdminCancelOrganizationInvitation(ctx context.Context, arg AdminCancelOrganizationInvitationParams) (string, error)
 	AdminCountAuditEvents(ctx context.Context, search string) (int32, error)
@@ -43,6 +44,7 @@ type Querier interface {
 	AdminUpsertOrganizationMember(ctx context.Context, arg AdminUpsertOrganizationMemberParams) error
 	AdminUpsertOrganizationOwner(ctx context.Context, arg AdminUpsertOrganizationOwnerParams) error
 	AdminUserGrowth(ctx context.Context) ([]AdminUserGrowthRow, error)
+	AssignOrganizationCustomRole(ctx context.Context, arg AssignOrganizationCustomRoleParams) (Member, error)
 	BulkAddOrganizationTeamMembers(ctx context.Context, arg BulkAddOrganizationTeamMembersParams) (int64, error)
 	BulkDeleteOrganizationTeamMembers(ctx context.Context, arg BulkDeleteOrganizationTeamMembersParams) (int64, error)
 	CanAccessOrganizationTeam(ctx context.Context, arg CanAccessOrganizationTeamParams) (bool, error)
@@ -61,12 +63,14 @@ type Querier interface {
 	CreateImpersonatedSession(ctx context.Context, arg CreateImpersonatedSessionParams) (Session, error)
 	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
 	CreateOrganizationAuditEvent(ctx context.Context, arg CreateOrganizationAuditEventParams) error
+	CreateOrganizationCustomRole(ctx context.Context, arg CreateOrganizationCustomRoleParams) (OrganizationRole, error)
 	CreateOrganizationTeam(ctx context.Context, arg CreateOrganizationTeamParams) (Team, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTwoFactorChallenge(ctx context.Context, arg CreateTwoFactorChallengeParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteAllUserSessions(ctx context.Context, userID string) error
 	DeleteEmailVerification(ctx context.Context, id string) error
+	DeleteOrganizationCustomRole(ctx context.Context, arg DeleteOrganizationCustomRoleParams) (int64, error)
 	DeleteOrganizationMember(ctx context.Context, arg DeleteOrganizationMemberParams) (Member, error)
 	DeleteOrganizationMemberTeams(ctx context.Context, arg DeleteOrganizationMemberTeamsParams) error
 	DeleteOrganizationTeam(ctx context.Context, arg DeleteOrganizationTeamParams) (Team, error)
@@ -81,6 +85,7 @@ type Querier interface {
 	GetActivePasswordReset(ctx context.Context, value string) (GetActivePasswordResetRow, error)
 	GetCredentialPasswordByUserID(ctx context.Context, userID string) (pgtype.Text, error)
 	GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error)
+	GetOrganizationCustomRole(ctx context.Context, arg GetOrganizationCustomRoleParams) (OrganizationRole, error)
 	GetOrganizationInvitationForAcceptance(ctx context.Context, arg GetOrganizationInvitationForAcceptanceParams) (GetOrganizationInvitationForAcceptanceRow, error)
 	GetOrganizationMembership(ctx context.Context, arg GetOrganizationMembershipParams) (GetOrganizationMembershipRow, error)
 	GetOrganizationTeam(ctx context.Context, arg GetOrganizationTeamParams) (Team, error)
@@ -92,9 +97,12 @@ type Querier interface {
 	GetTwoFactorChallenge(ctx context.Context, token string) (GetTwoFactorChallengeRow, error)
 	GetUserSignInActivity(ctx context.Context, userID string) ([]GetUserSignInActivityRow, error)
 	ListAccessibleOrganizationTeams(ctx context.Context, arg ListAccessibleOrganizationTeamsParams) ([]ListAccessibleOrganizationTeamsRow, error)
+	ListMemberCustomPermissions(ctx context.Context, arg ListMemberCustomPermissionsParams) ([]string, error)
 	ListOrganizationAuditEvents(ctx context.Context, arg ListOrganizationAuditEventsParams) ([]ListOrganizationAuditEventsRow, error)
+	ListOrganizationCustomRoles(ctx context.Context, organizationID string) ([]ListOrganizationCustomRolesRow, error)
 	ListOrganizationInvitations(ctx context.Context, organizationID string) ([]ListOrganizationInvitationsRow, error)
 	ListOrganizationMembers(ctx context.Context, organizationID string) ([]ListOrganizationMembersRow, error)
+	ListOrganizationRolePermissionKeys(ctx context.Context, arg ListOrganizationRolePermissionKeysParams) ([]string, error)
 	ListOrganizationTeamMembers(ctx context.Context, arg ListOrganizationTeamMembersParams) ([]ListOrganizationTeamMembersRow, error)
 	ListOrganizationTeams(ctx context.Context, arg ListOrganizationTeamsParams) ([]ListOrganizationTeamsRow, error)
 	ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]ListTeamAuditEventsRow, error)
@@ -106,12 +114,14 @@ type Querier interface {
 	MarkUserEmailVerified(ctx context.Context, id string) error
 	MarkUserNotificationRead(ctx context.Context, arg MarkUserNotificationReadParams) (Notification, error)
 	Ping(ctx context.Context) (int32, error)
+	ReplaceOrganizationRolePermissions(ctx context.Context, roleID string) error
 	RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) (string, error)
 	SetOrganizationTeamArchived(ctx context.Context, arg SetOrganizationTeamArchivedParams) (Team, error)
 	SetSessionActiveOrganization(ctx context.Context, arg SetSessionActiveOrganizationParams) error
 	SetSessionActiveTeam(ctx context.Context, arg SetSessionActiveTeamParams) (int64, error)
 	TransferOrganizationOwnership(ctx context.Context, arg TransferOrganizationOwnershipParams) error
 	UpdateCredentialPassword(ctx context.Context, arg UpdateCredentialPasswordParams) error
+	UpdateOrganizationCustomRole(ctx context.Context, arg UpdateOrganizationCustomRoleParams) (OrganizationRole, error)
 	UpdateOrganizationMemberRole(ctx context.Context, arg UpdateOrganizationMemberRoleParams) (Member, error)
 	UpdateOrganizationTeam(ctx context.Context, arg UpdateOrganizationTeamParams) (Team, error)
 	UpdateOrganizationWorkspace(ctx context.Context, arg UpdateOrganizationWorkspaceParams) (Organization, error)

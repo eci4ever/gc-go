@@ -659,7 +659,7 @@ WHERE id = $1;
 
 -- name: AdminDemoteOrganizationOwners :exec
 UPDATE members
-SET role = 'member'
+SET role = 'member', custom_role_id = NULL
 WHERE organization_id = $1
   AND role = 'owner';
 
@@ -678,7 +678,7 @@ INSERT INTO members (
     (now() AT TIME ZONE 'UTC')
 )
 ON CONFLICT (organization_id, user_id) DO UPDATE
-SET role = 'owner';
+SET role = 'owner', custom_role_id = NULL;
 
 -- name: AdminListOrganizationMembers :many
 SELECT
@@ -713,7 +713,7 @@ INSERT INTO members (
     (now() AT TIME ZONE 'UTC')
 )
 ON CONFLICT (organization_id, user_id) DO UPDATE
-SET role = excluded.role;
+SET role = excluded.role, custom_role_id = NULL;
 
 -- name: AdminGetOrganizationMember :one
 SELECT *
@@ -930,6 +930,7 @@ SELECT
     organizations.id, organizations.name, organizations.slug,
     organizations.logo, organizations.metadata, organizations.created_at,
     organizations.updated_at, members.role,
+    members.custom_role_id,
     members.created_at AS member_since
 FROM members
 JOIN organizations ON organizations.id = members.organization_id
@@ -982,11 +983,13 @@ RETURNING *;
 
 -- name: ListOrganizationMembers :many
 SELECT
-    members.id, members.role, members.created_at,
+    members.id, members.role, members.custom_role_id, members.created_at,
+    organization_roles.name AS custom_role_name,
     users.id AS user_id, users.name, users.email, users.image,
     users.email_verified
 FROM members
 JOIN users ON users.id = members.user_id
+LEFT JOIN organization_roles ON organization_roles.id = members.custom_role_id
 WHERE members.organization_id = $1 AND users.deleted_at IS NULL
 ORDER BY
     CASE members.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
@@ -1008,9 +1011,82 @@ WHERE invitations.organization_id = $1
 ORDER BY invitations.created_at DESC;
 
 -- name: UpdateOrganizationMemberRole :one
-UPDATE members SET role = $3
+UPDATE members SET role = $3, custom_role_id = NULL
 WHERE organization_id = $1 AND user_id = $2
 RETURNING *;
+
+-- name: AssignOrganizationCustomRole :one
+UPDATE members
+SET role = 'member', custom_role_id = sqlc.arg(custom_role_id)::text
+WHERE organization_id = sqlc.arg(organization_id)::text
+  AND user_id = sqlc.arg(user_id)::text
+  AND EXISTS (
+      SELECT 1 FROM organization_roles
+      WHERE id = sqlc.arg(custom_role_id)::text
+        AND organization_id = sqlc.arg(organization_id)::text
+  )
+RETURNING *;
+
+-- name: ListOrganizationCustomRoles :many
+SELECT
+    organization_roles.id, organization_roles.organization_id,
+    organization_roles.name, organization_roles.description,
+    organization_roles.created_at, organization_roles.updated_at,
+    coalesce(
+        array_agg(organization_role_permissions.permission_key ORDER BY organization_role_permissions.permission_key)
+            FILTER (WHERE organization_role_permissions.permission_key IS NOT NULL),
+        ARRAY[]::text[]
+    )::text[] AS permissions,
+    count(DISTINCT members.id)::int AS member_count
+FROM organization_roles
+LEFT JOIN organization_role_permissions
+    ON organization_role_permissions.role_id = organization_roles.id
+LEFT JOIN members ON members.custom_role_id = organization_roles.id
+WHERE organization_roles.organization_id = $1
+GROUP BY organization_roles.id
+ORDER BY organization_roles.name;
+
+-- name: GetOrganizationCustomRole :one
+SELECT * FROM organization_roles
+WHERE id = $1 AND organization_id = $2;
+
+-- name: CreateOrganizationCustomRole :one
+INSERT INTO organization_roles (
+    id, organization_id, name, description, created_by
+) VALUES ($1, $2, $3, $4, $5)
+RETURNING *;
+
+-- name: UpdateOrganizationCustomRole :one
+UPDATE organization_roles
+SET name = $3, description = $4
+WHERE id = $1 AND organization_id = $2
+RETURNING *;
+
+-- name: ReplaceOrganizationRolePermissions :exec
+DELETE FROM organization_role_permissions WHERE role_id = $1;
+
+-- name: AddOrganizationRolePermission :exec
+INSERT INTO organization_role_permissions (role_id, permission_key)
+VALUES ($1, $2);
+
+-- name: DeleteOrganizationCustomRole :execrows
+DELETE FROM organization_roles
+WHERE id = $1 AND organization_id = $2;
+
+-- name: ListMemberCustomPermissions :many
+SELECT organization_role_permissions.permission_key
+FROM members
+JOIN organization_role_permissions
+  ON organization_role_permissions.role_id = members.custom_role_id
+WHERE members.organization_id = $1 AND members.user_id = $2
+ORDER BY organization_role_permissions.permission_key;
+
+-- name: ListOrganizationRolePermissionKeys :many
+SELECT organization_role_permissions.permission_key
+FROM organization_role_permissions
+JOIN organization_roles ON organization_roles.id = organization_role_permissions.role_id
+WHERE organization_roles.id = $1 AND organization_roles.organization_id = $2
+ORDER BY organization_role_permissions.permission_key;
 
 -- name: DeleteOrganizationMember :one
 DELETE FROM members
@@ -1197,7 +1273,8 @@ SET role = CASE
     WHEN user_id = sqlc.arg(new_owner_id)::text THEN 'owner'
     WHEN role = 'owner' THEN 'admin'
     ELSE role
-END
+END,
+custom_role_id = NULL
 WHERE organization_id = sqlc.arg(organization_id)::text
   AND (role = 'owner' OR user_id = sqlc.arg(new_owner_id)::text);
 
