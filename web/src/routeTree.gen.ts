@@ -32,6 +32,7 @@ import { Route as ProtectedOrganizationsOrganizationSlugAuditRouteImport } from 
 import { Route as ProtectedOrganizationsOrganizationSlugMembersRouteImport } from './routes/_protected/organizations/$organizationSlug/members'
 import { Route as ProtectedOrganizationsOrganizationSlugSettingsRouteImport } from './routes/_protected/organizations/$organizationSlug/settings'
 import { Route as ProtectedOrganizationsOrganizationSlugTeamsRouteImport } from './routes/_protected/organizations/$organizationSlug/teams'
+import { Route as ProtectedOrganizationsOrganizationSlugTeamsIndexRouteImport } from './routes/_protected/organizations/$organizationSlug/teams/index'
 import { Route as ProtectedOrganizationsOrganizationSlugTeamsTeamIdRouteImport } from './routes/_protected/organizations/$organizationSlug/teams/$teamId'
 
 const IndexRoute = IndexRouteImport.update({
@@ -156,6 +157,12 @@ const ProtectedOrganizationsOrganizationSlugTeamsRoute =
     path: '/teams',
     getParentRoute: () => ProtectedOrganizationsOrganizationSlugRoute,
   } as any)
+const ProtectedOrganizationsOrganizationSlugTeamsIndexRoute =
+  ProtectedOrganizationsOrganizationSlugTeamsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ProtectedOrganizationsOrganizationSlugTeamsRoute,
+  } as any)
 const ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute =
   ProtectedOrganizationsOrganizationSlugTeamsTeamIdRouteImport.update({
     id: '/$teamId',
@@ -187,6 +194,7 @@ export interface FileRoutesByFullPath {
   '/organizations/$organizationSlug/teams': typeof ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren
   '/organizations/$organizationSlug/': typeof ProtectedOrganizationsOrganizationSlugIndexRoute
   '/organizations/$organizationSlug/teams/$teamId': typeof ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute
+  '/organizations/$organizationSlug/teams/': typeof ProtectedOrganizationsOrganizationSlugTeamsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -207,9 +215,9 @@ export interface FileRoutesByTo {
   '/organizations/$organizationSlug/audit': typeof ProtectedOrganizationsOrganizationSlugAuditRoute
   '/organizations/$organizationSlug/members': typeof ProtectedOrganizationsOrganizationSlugMembersRoute
   '/organizations/$organizationSlug/settings': typeof ProtectedOrganizationsOrganizationSlugSettingsRoute
-  '/organizations/$organizationSlug/teams': typeof ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren
   '/organizations/$organizationSlug': typeof ProtectedOrganizationsOrganizationSlugIndexRoute
   '/organizations/$organizationSlug/teams/$teamId': typeof ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute
+  '/organizations/$organizationSlug/teams': typeof ProtectedOrganizationsOrganizationSlugTeamsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -237,6 +245,7 @@ export interface FileRoutesById {
   '/_protected/organizations/$organizationSlug/teams': typeof ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren
   '/_protected/organizations/$organizationSlug/': typeof ProtectedOrganizationsOrganizationSlugIndexRoute
   '/_protected/organizations/$organizationSlug/teams/$teamId': typeof ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute
+  '/_protected/organizations/$organizationSlug/teams/': typeof ProtectedOrganizationsOrganizationSlugTeamsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -264,6 +273,7 @@ export interface FileRouteTypes {
     | '/organizations/$organizationSlug/teams'
     | '/organizations/$organizationSlug/'
     | '/organizations/$organizationSlug/teams/$teamId'
+    | '/organizations/$organizationSlug/teams/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -284,9 +294,9 @@ export interface FileRouteTypes {
     | '/organizations/$organizationSlug/audit'
     | '/organizations/$organizationSlug/members'
     | '/organizations/$organizationSlug/settings'
-    | '/organizations/$organizationSlug/teams'
     | '/organizations/$organizationSlug'
     | '/organizations/$organizationSlug/teams/$teamId'
+    | '/organizations/$organizationSlug/teams'
   id:
     | '__root__'
     | '/'
@@ -313,6 +323,7 @@ export interface FileRouteTypes {
     | '/_protected/organizations/$organizationSlug/teams'
     | '/_protected/organizations/$organizationSlug/'
     | '/_protected/organizations/$organizationSlug/teams/$teamId'
+    | '/_protected/organizations/$organizationSlug/teams/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -490,6 +501,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedOrganizationsOrganizationSlugTeamsRouteImport
       parentRoute: typeof ProtectedOrganizationsOrganizationSlugRoute
     }
+    '/_protected/organizations/$organizationSlug/teams/': {
+      id: '/_protected/organizations/$organizationSlug/teams/'
+      path: '/'
+      fullPath: '/organizations/$organizationSlug/teams/'
+      preLoaderRoute: typeof ProtectedOrganizationsOrganizationSlugTeamsIndexRouteImport
+      parentRoute: typeof ProtectedOrganizationsOrganizationSlugTeamsRoute
+    }
     '/_protected/organizations/$organizationSlug/teams/$teamId': {
       id: '/_protected/organizations/$organizationSlug/teams/$teamId'
       path: '/$teamId'
@@ -536,12 +554,15 @@ const ProtectedAdminRouteWithChildren = ProtectedAdminRoute._addFileChildren(
 
 interface ProtectedOrganizationsOrganizationSlugTeamsRouteChildren {
   ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute: typeof ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute
+  ProtectedOrganizationsOrganizationSlugTeamsIndexRoute: typeof ProtectedOrganizationsOrganizationSlugTeamsIndexRoute
 }
 
 const ProtectedOrganizationsOrganizationSlugTeamsRouteChildren: ProtectedOrganizationsOrganizationSlugTeamsRouteChildren =
   {
     ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute:
       ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute,
+    ProtectedOrganizationsOrganizationSlugTeamsIndexRoute:
+      ProtectedOrganizationsOrganizationSlugTeamsIndexRoute,
   }
 
 const ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren =
