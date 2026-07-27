@@ -29,6 +29,15 @@ func TestValidEmail(t *testing.T) {
 	}
 }
 
+func TestContainsOrganizationRole(t *testing.T) {
+	if !containsRole("owner", []string{"owner", "admin"}) {
+		t.Fatal("owner should match an owner/admin permission set")
+	}
+	if containsRole("member", []string{"owner", "admin"}) {
+		t.Fatal("member should not match an owner/admin permission set")
+	}
+}
+
 func TestSessionTokenIsHashed(t *testing.T) {
 	t.Parallel()
 

@@ -9,136 +9,141 @@ import (
 )
 
 type Account struct {
-	ID                    string
-	AccountID             string
-	ProviderID            string
-	UserID                string
-	AccessToken           pgtype.Text
-	RefreshToken          pgtype.Text
-	IDToken               pgtype.Text
-	AccessTokenExpiresAt  pgtype.Timestamp
-	RefreshTokenExpiresAt pgtype.Timestamp
-	Scope                 pgtype.Text
-	Password              pgtype.Text
-	CreatedAt             pgtype.Timestamp
-	UpdatedAt             pgtype.Timestamp
+	ID                    string           `json:"id"`
+	AccountID             string           `json:"accountId"`
+	ProviderID            string           `json:"providerId"`
+	UserID                string           `json:"userId"`
+	AccessToken           pgtype.Text      `json:"accessToken"`
+	RefreshToken          pgtype.Text      `json:"refreshToken"`
+	IDToken               pgtype.Text      `json:"idToken"`
+	AccessTokenExpiresAt  pgtype.Timestamp `json:"accessTokenExpiresAt"`
+	RefreshTokenExpiresAt pgtype.Timestamp `json:"refreshTokenExpiresAt"`
+	Scope                 pgtype.Text      `json:"scope"`
+	Password              pgtype.Text      `json:"password"`
+	CreatedAt             pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt             pgtype.Timestamp `json:"updatedAt"`
 }
 
 type AuthEvent struct {
-	ID          string
-	UserID      string
-	EventType   string
-	IpAddress   pgtype.Text
-	UserAgent   pgtype.Text
-	CreatedAt   pgtype.Timestamp
-	TargetType  pgtype.Text
-	TargetID    pgtype.Text
-	Reason      pgtype.Text
-	BeforeState []byte
-	AfterState  []byte
+	ID             string           `json:"id"`
+	UserID         string           `json:"userId"`
+	EventType      string           `json:"eventType"`
+	IpAddress      pgtype.Text      `json:"ipAddress"`
+	UserAgent      pgtype.Text      `json:"userAgent"`
+	CreatedAt      pgtype.Timestamp `json:"createdAt"`
+	TargetType     pgtype.Text      `json:"targetType"`
+	TargetID       pgtype.Text      `json:"targetId"`
+	Reason         pgtype.Text      `json:"reason"`
+	BeforeState    []byte           `json:"beforeState"`
+	AfterState     []byte           `json:"afterState"`
+	OrganizationID pgtype.Text      `json:"organizationId"`
 }
 
 type Invitation struct {
-	ID             string
-	OrganizationID string
-	Email          string
-	Role           pgtype.Text
-	TeamID         pgtype.Text
-	Status         string
-	ExpiresAt      pgtype.Timestamp
-	CreatedAt      pgtype.Timestamp
-	InviterID      string
-	Token          pgtype.Text
-	InvitedUserID  pgtype.Text
-	AcceptedAt     pgtype.Timestamp
+	ID             string           `json:"id"`
+	OrganizationID string           `json:"organizationId"`
+	Email          string           `json:"email"`
+	Role           pgtype.Text      `json:"role"`
+	TeamID         pgtype.Text      `json:"teamId"`
+	Status         string           `json:"status"`
+	ExpiresAt      pgtype.Timestamp `json:"expiresAt"`
+	CreatedAt      pgtype.Timestamp `json:"createdAt"`
+	InviterID      string           `json:"inviterId"`
+	Token          pgtype.Text      `json:"token"`
+	InvitedUserID  pgtype.Text      `json:"invitedUserId"`
+	AcceptedAt     pgtype.Timestamp `json:"acceptedAt"`
 }
 
 type Member struct {
-	ID             string
-	OrganizationID string
-	UserID         string
-	Role           string
-	CreatedAt      pgtype.Timestamp
+	ID             string           `json:"id"`
+	OrganizationID string           `json:"organizationId"`
+	UserID         string           `json:"userId"`
+	Role           string           `json:"role"`
+	CreatedAt      pgtype.Timestamp `json:"createdAt"`
 }
 
 type Organization struct {
-	ID        string
-	Name      string
-	Slug      string
-	Logo      pgtype.Text
-	CreatedAt pgtype.Timestamp
-	Metadata  pgtype.Text
-	DeletedAt pgtype.Timestamp
+	ID        string           `json:"id"`
+	Name      string           `json:"name"`
+	Slug      string           `json:"slug"`
+	Logo      pgtype.Text      `json:"logo"`
+	CreatedAt pgtype.Timestamp `json:"createdAt"`
+	Metadata  pgtype.Text      `json:"metadata"`
+	DeletedAt pgtype.Timestamp `json:"deletedAt"`
+	UpdatedAt pgtype.Timestamp `json:"updatedAt"`
 }
 
 type Session struct {
-	ID                   string
-	ExpiresAt            pgtype.Timestamp
-	Token                string
-	CreatedAt            pgtype.Timestamp
-	UpdatedAt            pgtype.Timestamp
-	IpAddress            pgtype.Text
-	UserAgent            pgtype.Text
-	UserID               string
-	ImpersonatedBy       pgtype.Text
-	ActiveOrganizationID pgtype.Text
-	ActiveTeamID         pgtype.Text
-	ImpersonationReason  pgtype.Text
+	ID                   string           `json:"id"`
+	ExpiresAt            pgtype.Timestamp `json:"expiresAt"`
+	Token                string           `json:"token"`
+	CreatedAt            pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt            pgtype.Timestamp `json:"updatedAt"`
+	IpAddress            pgtype.Text      `json:"ipAddress"`
+	UserAgent            pgtype.Text      `json:"userAgent"`
+	UserID               string           `json:"userId"`
+	ImpersonatedBy       pgtype.Text      `json:"impersonatedBy"`
+	ActiveOrganizationID pgtype.Text      `json:"activeOrganizationId"`
+	ActiveTeamID         pgtype.Text      `json:"activeTeamId"`
+	ImpersonationReason  pgtype.Text      `json:"impersonationReason"`
 }
 
 type Team struct {
-	ID             string
-	Name           string
-	OrganizationID string
-	CreatedAt      pgtype.Timestamp
-	UpdatedAt      pgtype.Timestamp
+	ID             string           `json:"id"`
+	Name           string           `json:"name"`
+	OrganizationID string           `json:"organizationId"`
+	CreatedAt      pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt      pgtype.Timestamp `json:"updatedAt"`
+	Description    pgtype.Text      `json:"description"`
+	LeadUserID     pgtype.Text      `json:"leadUserId"`
+	ArchivedAt     pgtype.Timestamp `json:"archivedAt"`
 }
 
 type TeamMember struct {
-	ID        string
-	TeamID    string
-	UserID    string
-	CreatedAt pgtype.Timestamp
+	ID        string           `json:"id"`
+	TeamID    string           `json:"teamId"`
+	UserID    string           `json:"userId"`
+	CreatedAt pgtype.Timestamp `json:"createdAt"`
 }
 
 type TwoFactor struct {
-	ID          string
-	UserID      string
-	Secret      string
-	BackupCodes string
-	Enabled     bool
-	CreatedAt   pgtype.Timestamp
-	UpdatedAt   pgtype.Timestamp
+	ID          string           `json:"id"`
+	UserID      string           `json:"userId"`
+	Secret      string           `json:"secret"`
+	BackupCodes string           `json:"backupCodes"`
+	Enabled     bool             `json:"enabled"`
+	CreatedAt   pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt   pgtype.Timestamp `json:"updatedAt"`
 }
 
 type TwoFactorChallenge struct {
-	ID        string
-	Token     string
-	UserID    string
-	ExpiresAt pgtype.Timestamp
-	CreatedAt pgtype.Timestamp
+	ID        string           `json:"id"`
+	Token     string           `json:"token"`
+	UserID    string           `json:"userId"`
+	ExpiresAt pgtype.Timestamp `json:"expiresAt"`
+	CreatedAt pgtype.Timestamp `json:"createdAt"`
 }
 
 type User struct {
-	ID            string
-	Name          string
-	Email         string
-	EmailVerified bool
-	Image         pgtype.Text
-	CreatedAt     pgtype.Timestamp
-	UpdatedAt     pgtype.Timestamp
-	Role          string
-	Banned        pgtype.Bool
-	BanReason     pgtype.Text
-	BanExpires    pgtype.Timestamp
-	DeletedAt     pgtype.Timestamp
+	ID            string           `json:"id"`
+	Name          string           `json:"name"`
+	Email         string           `json:"email"`
+	EmailVerified bool             `json:"emailVerified"`
+	Image         pgtype.Text      `json:"image"`
+	CreatedAt     pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt     pgtype.Timestamp `json:"updatedAt"`
+	Role          string           `json:"role"`
+	Banned        pgtype.Bool      `json:"banned"`
+	BanReason     pgtype.Text      `json:"banReason"`
+	BanExpires    pgtype.Timestamp `json:"banExpires"`
+	DeletedAt     pgtype.Timestamp `json:"deletedAt"`
 }
 
 type Verification struct {
-	ID         string
-	Identifier string
-	Value      string
-	ExpiresAt  pgtype.Timestamp
-	CreatedAt  pgtype.Timestamp
-	UpdatedAt  pgtype.Timestamp
+	ID         string           `json:"id"`
+	Identifier string           `json:"identifier"`
+	Value      string           `json:"value"`
+	ExpiresAt  pgtype.Timestamp `json:"expiresAt"`
+	CreatedAt  pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt  pgtype.Timestamp `json:"updatedAt"`
 }

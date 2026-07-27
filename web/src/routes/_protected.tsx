@@ -70,6 +70,18 @@ function ProtectedLayout() {
   const pageTitle =
     pathname === '/account'
       ? 'Account'
+      : pathname.includes('/members') && pathname.startsWith('/organizations/')
+        ? 'Organization Members'
+        : pathname.includes('/teams/') && pathname.startsWith('/organizations/')
+          ? 'Team'
+          : pathname.endsWith('/teams') && pathname.startsWith('/organizations/')
+            ? 'Organization Teams'
+            : pathname.endsWith('/settings') && pathname.startsWith('/organizations/')
+              ? 'Organization Settings'
+              : pathname.endsWith('/audit') && pathname.startsWith('/organizations/')
+                ? 'Organization Audit'
+                : pathname.startsWith('/organizations/')
+                  ? 'Organization Overview'
       : pathname === '/admin/users'
         ? 'Users'
         : pathname.startsWith('/admin/organizations')

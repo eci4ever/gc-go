@@ -25,7 +25,14 @@ import { Route as ProtectedAdminIndexRouteImport } from './routes/_protected/adm
 import { Route as ProtectedAdminAuditRouteImport } from './routes/_protected/admin/audit'
 import { Route as ProtectedAdminOrganizationsRouteImport } from './routes/_protected/admin/organizations'
 import { Route as ProtectedAdminUsersRouteImport } from './routes/_protected/admin/users'
+import { Route as ProtectedOrganizationsOrganizationSlugRouteImport } from './routes/_protected/organizations/$organizationSlug'
 import { Route as ProtectedAdminOrganizationsOrganizationIdRouteImport } from './routes/_protected/admin/organizations/$organizationId'
+import { Route as ProtectedOrganizationsOrganizationSlugIndexRouteImport } from './routes/_protected/organizations/$organizationSlug/index'
+import { Route as ProtectedOrganizationsOrganizationSlugAuditRouteImport } from './routes/_protected/organizations/$organizationSlug/audit'
+import { Route as ProtectedOrganizationsOrganizationSlugMembersRouteImport } from './routes/_protected/organizations/$organizationSlug/members'
+import { Route as ProtectedOrganizationsOrganizationSlugSettingsRouteImport } from './routes/_protected/organizations/$organizationSlug/settings'
+import { Route as ProtectedOrganizationsOrganizationSlugTeamsRouteImport } from './routes/_protected/organizations/$organizationSlug/teams'
+import { Route as ProtectedOrganizationsOrganizationSlugTeamsTeamIdRouteImport } from './routes/_protected/organizations/$organizationSlug/teams/$teamId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -107,11 +114,53 @@ const ProtectedAdminUsersRoute = ProtectedAdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => ProtectedAdminRoute,
 } as any)
+const ProtectedOrganizationsOrganizationSlugRoute =
+  ProtectedOrganizationsOrganizationSlugRouteImport.update({
+    id: '/organizations/$organizationSlug',
+    path: '/organizations/$organizationSlug',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
 const ProtectedAdminOrganizationsOrganizationIdRoute =
   ProtectedAdminOrganizationsOrganizationIdRouteImport.update({
     id: '/$organizationId',
     path: '/$organizationId',
     getParentRoute: () => ProtectedAdminOrganizationsRoute,
+  } as any)
+const ProtectedOrganizationsOrganizationSlugIndexRoute =
+  ProtectedOrganizationsOrganizationSlugIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ProtectedOrganizationsOrganizationSlugRoute,
+  } as any)
+const ProtectedOrganizationsOrganizationSlugAuditRoute =
+  ProtectedOrganizationsOrganizationSlugAuditRouteImport.update({
+    id: '/audit',
+    path: '/audit',
+    getParentRoute: () => ProtectedOrganizationsOrganizationSlugRoute,
+  } as any)
+const ProtectedOrganizationsOrganizationSlugMembersRoute =
+  ProtectedOrganizationsOrganizationSlugMembersRouteImport.update({
+    id: '/members',
+    path: '/members',
+    getParentRoute: () => ProtectedOrganizationsOrganizationSlugRoute,
+  } as any)
+const ProtectedOrganizationsOrganizationSlugSettingsRoute =
+  ProtectedOrganizationsOrganizationSlugSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => ProtectedOrganizationsOrganizationSlugRoute,
+  } as any)
+const ProtectedOrganizationsOrganizationSlugTeamsRoute =
+  ProtectedOrganizationsOrganizationSlugTeamsRouteImport.update({
+    id: '/teams',
+    path: '/teams',
+    getParentRoute: () => ProtectedOrganizationsOrganizationSlugRoute,
+  } as any)
+const ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute =
+  ProtectedOrganizationsOrganizationSlugTeamsTeamIdRouteImport.update({
+    id: '/$teamId',
+    path: '/$teamId',
+    getParentRoute: () => ProtectedOrganizationsOrganizationSlugTeamsRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -129,8 +178,15 @@ export interface FileRoutesByFullPath {
   '/admin/audit': typeof ProtectedAdminAuditRoute
   '/admin/organizations': typeof ProtectedAdminOrganizationsRouteWithChildren
   '/admin/users': typeof ProtectedAdminUsersRoute
+  '/organizations/$organizationSlug': typeof ProtectedOrganizationsOrganizationSlugRouteWithChildren
   '/admin/': typeof ProtectedAdminIndexRoute
   '/admin/organizations/$organizationId': typeof ProtectedAdminOrganizationsOrganizationIdRoute
+  '/organizations/$organizationSlug/audit': typeof ProtectedOrganizationsOrganizationSlugAuditRoute
+  '/organizations/$organizationSlug/members': typeof ProtectedOrganizationsOrganizationSlugMembersRoute
+  '/organizations/$organizationSlug/settings': typeof ProtectedOrganizationsOrganizationSlugSettingsRoute
+  '/organizations/$organizationSlug/teams': typeof ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren
+  '/organizations/$organizationSlug/': typeof ProtectedOrganizationsOrganizationSlugIndexRoute
+  '/organizations/$organizationSlug/teams/$teamId': typeof ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -148,6 +204,12 @@ export interface FileRoutesByTo {
   '/admin/users': typeof ProtectedAdminUsersRoute
   '/admin': typeof ProtectedAdminIndexRoute
   '/admin/organizations/$organizationId': typeof ProtectedAdminOrganizationsOrganizationIdRoute
+  '/organizations/$organizationSlug/audit': typeof ProtectedOrganizationsOrganizationSlugAuditRoute
+  '/organizations/$organizationSlug/members': typeof ProtectedOrganizationsOrganizationSlugMembersRoute
+  '/organizations/$organizationSlug/settings': typeof ProtectedOrganizationsOrganizationSlugSettingsRoute
+  '/organizations/$organizationSlug/teams': typeof ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren
+  '/organizations/$organizationSlug': typeof ProtectedOrganizationsOrganizationSlugIndexRoute
+  '/organizations/$organizationSlug/teams/$teamId': typeof ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -166,8 +228,15 @@ export interface FileRoutesById {
   '/_protected/admin/audit': typeof ProtectedAdminAuditRoute
   '/_protected/admin/organizations': typeof ProtectedAdminOrganizationsRouteWithChildren
   '/_protected/admin/users': typeof ProtectedAdminUsersRoute
+  '/_protected/organizations/$organizationSlug': typeof ProtectedOrganizationsOrganizationSlugRouteWithChildren
   '/_protected/admin/': typeof ProtectedAdminIndexRoute
   '/_protected/admin/organizations/$organizationId': typeof ProtectedAdminOrganizationsOrganizationIdRoute
+  '/_protected/organizations/$organizationSlug/audit': typeof ProtectedOrganizationsOrganizationSlugAuditRoute
+  '/_protected/organizations/$organizationSlug/members': typeof ProtectedOrganizationsOrganizationSlugMembersRoute
+  '/_protected/organizations/$organizationSlug/settings': typeof ProtectedOrganizationsOrganizationSlugSettingsRoute
+  '/_protected/organizations/$organizationSlug/teams': typeof ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren
+  '/_protected/organizations/$organizationSlug/': typeof ProtectedOrganizationsOrganizationSlugIndexRoute
+  '/_protected/organizations/$organizationSlug/teams/$teamId': typeof ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -186,8 +255,15 @@ export interface FileRouteTypes {
     | '/admin/audit'
     | '/admin/organizations'
     | '/admin/users'
+    | '/organizations/$organizationSlug'
     | '/admin/'
     | '/admin/organizations/$organizationId'
+    | '/organizations/$organizationSlug/audit'
+    | '/organizations/$organizationSlug/members'
+    | '/organizations/$organizationSlug/settings'
+    | '/organizations/$organizationSlug/teams'
+    | '/organizations/$organizationSlug/'
+    | '/organizations/$organizationSlug/teams/$teamId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -205,6 +281,12 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/admin'
     | '/admin/organizations/$organizationId'
+    | '/organizations/$organizationSlug/audit'
+    | '/organizations/$organizationSlug/members'
+    | '/organizations/$organizationSlug/settings'
+    | '/organizations/$organizationSlug/teams'
+    | '/organizations/$organizationSlug'
+    | '/organizations/$organizationSlug/teams/$teamId'
   id:
     | '__root__'
     | '/'
@@ -222,8 +304,15 @@ export interface FileRouteTypes {
     | '/_protected/admin/audit'
     | '/_protected/admin/organizations'
     | '/_protected/admin/users'
+    | '/_protected/organizations/$organizationSlug'
     | '/_protected/admin/'
     | '/_protected/admin/organizations/$organizationId'
+    | '/_protected/organizations/$organizationSlug/audit'
+    | '/_protected/organizations/$organizationSlug/members'
+    | '/_protected/organizations/$organizationSlug/settings'
+    | '/_protected/organizations/$organizationSlug/teams'
+    | '/_protected/organizations/$organizationSlug/'
+    | '/_protected/organizations/$organizationSlug/teams/$teamId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -352,12 +441,61 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedAdminUsersRouteImport
       parentRoute: typeof ProtectedAdminRoute
     }
+    '/_protected/organizations/$organizationSlug': {
+      id: '/_protected/organizations/$organizationSlug'
+      path: '/organizations/$organizationSlug'
+      fullPath: '/organizations/$organizationSlug'
+      preLoaderRoute: typeof ProtectedOrganizationsOrganizationSlugRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
     '/_protected/admin/organizations/$organizationId': {
       id: '/_protected/admin/organizations/$organizationId'
       path: '/$organizationId'
       fullPath: '/admin/organizations/$organizationId'
       preLoaderRoute: typeof ProtectedAdminOrganizationsOrganizationIdRouteImport
       parentRoute: typeof ProtectedAdminOrganizationsRoute
+    }
+    '/_protected/organizations/$organizationSlug/': {
+      id: '/_protected/organizations/$organizationSlug/'
+      path: '/'
+      fullPath: '/organizations/$organizationSlug/'
+      preLoaderRoute: typeof ProtectedOrganizationsOrganizationSlugIndexRouteImport
+      parentRoute: typeof ProtectedOrganizationsOrganizationSlugRoute
+    }
+    '/_protected/organizations/$organizationSlug/audit': {
+      id: '/_protected/organizations/$organizationSlug/audit'
+      path: '/audit'
+      fullPath: '/organizations/$organizationSlug/audit'
+      preLoaderRoute: typeof ProtectedOrganizationsOrganizationSlugAuditRouteImport
+      parentRoute: typeof ProtectedOrganizationsOrganizationSlugRoute
+    }
+    '/_protected/organizations/$organizationSlug/members': {
+      id: '/_protected/organizations/$organizationSlug/members'
+      path: '/members'
+      fullPath: '/organizations/$organizationSlug/members'
+      preLoaderRoute: typeof ProtectedOrganizationsOrganizationSlugMembersRouteImport
+      parentRoute: typeof ProtectedOrganizationsOrganizationSlugRoute
+    }
+    '/_protected/organizations/$organizationSlug/settings': {
+      id: '/_protected/organizations/$organizationSlug/settings'
+      path: '/settings'
+      fullPath: '/organizations/$organizationSlug/settings'
+      preLoaderRoute: typeof ProtectedOrganizationsOrganizationSlugSettingsRouteImport
+      parentRoute: typeof ProtectedOrganizationsOrganizationSlugRoute
+    }
+    '/_protected/organizations/$organizationSlug/teams': {
+      id: '/_protected/organizations/$organizationSlug/teams'
+      path: '/teams'
+      fullPath: '/organizations/$organizationSlug/teams'
+      preLoaderRoute: typeof ProtectedOrganizationsOrganizationSlugTeamsRouteImport
+      parentRoute: typeof ProtectedOrganizationsOrganizationSlugRoute
+    }
+    '/_protected/organizations/$organizationSlug/teams/$teamId': {
+      id: '/_protected/organizations/$organizationSlug/teams/$teamId'
+      path: '/$teamId'
+      fullPath: '/organizations/$organizationSlug/teams/$teamId'
+      preLoaderRoute: typeof ProtectedOrganizationsOrganizationSlugTeamsTeamIdRouteImport
+      parentRoute: typeof ProtectedOrganizationsOrganizationSlugTeamsRoute
     }
   }
 }
@@ -396,16 +534,61 @@ const ProtectedAdminRouteWithChildren = ProtectedAdminRoute._addFileChildren(
   ProtectedAdminRouteChildren,
 )
 
+interface ProtectedOrganizationsOrganizationSlugTeamsRouteChildren {
+  ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute: typeof ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute
+}
+
+const ProtectedOrganizationsOrganizationSlugTeamsRouteChildren: ProtectedOrganizationsOrganizationSlugTeamsRouteChildren =
+  {
+    ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute:
+      ProtectedOrganizationsOrganizationSlugTeamsTeamIdRoute,
+  }
+
+const ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren =
+  ProtectedOrganizationsOrganizationSlugTeamsRoute._addFileChildren(
+    ProtectedOrganizationsOrganizationSlugTeamsRouteChildren,
+  )
+
+interface ProtectedOrganizationsOrganizationSlugRouteChildren {
+  ProtectedOrganizationsOrganizationSlugAuditRoute: typeof ProtectedOrganizationsOrganizationSlugAuditRoute
+  ProtectedOrganizationsOrganizationSlugMembersRoute: typeof ProtectedOrganizationsOrganizationSlugMembersRoute
+  ProtectedOrganizationsOrganizationSlugSettingsRoute: typeof ProtectedOrganizationsOrganizationSlugSettingsRoute
+  ProtectedOrganizationsOrganizationSlugTeamsRoute: typeof ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren
+  ProtectedOrganizationsOrganizationSlugIndexRoute: typeof ProtectedOrganizationsOrganizationSlugIndexRoute
+}
+
+const ProtectedOrganizationsOrganizationSlugRouteChildren: ProtectedOrganizationsOrganizationSlugRouteChildren =
+  {
+    ProtectedOrganizationsOrganizationSlugAuditRoute:
+      ProtectedOrganizationsOrganizationSlugAuditRoute,
+    ProtectedOrganizationsOrganizationSlugMembersRoute:
+      ProtectedOrganizationsOrganizationSlugMembersRoute,
+    ProtectedOrganizationsOrganizationSlugSettingsRoute:
+      ProtectedOrganizationsOrganizationSlugSettingsRoute,
+    ProtectedOrganizationsOrganizationSlugTeamsRoute:
+      ProtectedOrganizationsOrganizationSlugTeamsRouteWithChildren,
+    ProtectedOrganizationsOrganizationSlugIndexRoute:
+      ProtectedOrganizationsOrganizationSlugIndexRoute,
+  }
+
+const ProtectedOrganizationsOrganizationSlugRouteWithChildren =
+  ProtectedOrganizationsOrganizationSlugRoute._addFileChildren(
+    ProtectedOrganizationsOrganizationSlugRouteChildren,
+  )
+
 interface ProtectedRouteChildren {
   ProtectedAccountRoute: typeof ProtectedAccountRoute
   ProtectedAdminRoute: typeof ProtectedAdminRouteWithChildren
   ProtectedDashboardRoute: typeof ProtectedDashboardRoute
+  ProtectedOrganizationsOrganizationSlugRoute: typeof ProtectedOrganizationsOrganizationSlugRouteWithChildren
 }
 
 const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedAccountRoute: ProtectedAccountRoute,
   ProtectedAdminRoute: ProtectedAdminRouteWithChildren,
   ProtectedDashboardRoute: ProtectedDashboardRoute,
+  ProtectedOrganizationsOrganizationSlugRoute:
+    ProtectedOrganizationsOrganizationSlugRouteWithChildren,
 }
 
 const ProtectedRouteWithChildren = ProtectedRoute._addFileChildren(

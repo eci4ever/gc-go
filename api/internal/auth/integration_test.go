@@ -46,7 +46,7 @@ func TestAuthFlowIntegration(t *testing.T) {
 	}
 	email := fmt.Sprintf("auth-smoke-%s@example.com", suffix)
 	managedEmail := fmt.Sprintf("managed-%s@example.com", suffix)
-	managedSlug := "managed-" + strings.ToLower(suffix)
+	managedSlug := "managed-" + strings.ReplaceAll(strings.ToLower(suffix), "_", "-")
 	t.Cleanup(func() {
 		if _, err := pool.Exec(
 			context.Background(),
@@ -73,6 +73,7 @@ func TestAuthFlowIntegration(t *testing.T) {
 	handler.Register(app.Group("/api/auth"))
 	handler.RegisterDashboard(app.Group("/api"))
 	handler.RegisterAdmin(app.Group("/api/admin"))
+	handler.RegisterOrganizations(app.Group("/api/organizations"))
 
 	signupResponse := authRequest(t, app, http.MethodPost, "/api/auth/signup", map[string]string{
 		"name":     "Auth Smoke Test",
@@ -848,6 +849,105 @@ func TestAuthFlowIntegration(t *testing.T) {
 		)
 	}
 	acceptInvitationResponse.Body.Close()
+
+	myOrganizationsResponse := authRequest(
+		t,
+		app,
+		http.MethodGet,
+		"/api/organizations",
+		nil,
+		impersonatedCookies[0],
+	)
+	if myOrganizationsResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"list user organizations status = %d, want %d",
+			myOrganizationsResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	var myOrganizationsBody struct {
+		Organizations []db.ListUserOrganizationsRow `json:"organizations"`
+	}
+	decodeResponse(t, myOrganizationsResponse, &myOrganizationsBody)
+	if len(myOrganizationsBody.Organizations) != 1 ||
+		myOrganizationsBody.Organizations[0].Role != "member" {
+		t.Fatal("accepted organization membership was not returned")
+	}
+
+	memberCreateTeamResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams",
+		map[string]any{"name": "Forbidden Team"},
+		impersonatedCookies[0],
+	)
+	if memberCreateTeamResponse.StatusCode != http.StatusForbidden {
+		t.Fatalf(
+			"member create team status = %d, want %d",
+			memberCreateTeamResponse.StatusCode,
+			http.StatusForbidden,
+		)
+	}
+	memberCreateTeamResponse.Body.Close()
+
+	ownerCreateTeamResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams",
+		map[string]any{
+			"name":        "Operations",
+			"description": "Integration team",
+			"leadUserId":  managedUserBody.User.ID,
+		},
+		adminCookies[0],
+	)
+	if ownerCreateTeamResponse.StatusCode != http.StatusCreated {
+		t.Fatalf(
+			"owner create team status = %d, want %d",
+			ownerCreateTeamResponse.StatusCode,
+			http.StatusCreated,
+		)
+	}
+	var teamBody struct {
+		Team db.Team `json:"team"`
+	}
+	decodeResponse(t, ownerCreateTeamResponse, &teamBody)
+
+	addTeamMemberResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/members",
+		map[string]any{"userId": managedUserBody.User.ID},
+		adminCookies[0],
+	)
+	if addTeamMemberResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"add team member status = %d, want %d",
+			addTeamMemberResponse.StatusCode,
+			http.StatusNoContent,
+		)
+	}
+	addTeamMemberResponse.Body.Close()
+
+	organizationAuditResponse := authRequest(
+		t,
+		app,
+		http.MethodGet,
+		"/api/organizations/"+managedSlug+"/audit-events",
+		nil,
+		adminCookies[0],
+	)
+	if organizationAuditResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"organization audit status = %d, want %d",
+			organizationAuditResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	organizationAuditResponse.Body.Close()
 
 	impersonatedAdminResponse := authRequest(
 		t,

@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	AcceptOrganizationInvitation(ctx context.Context, arg AcceptOrganizationInvitationParams) error
+	AddOrganizationTeamMember(ctx context.Context, arg AddOrganizationTeamMemberParams) (int64, error)
 	AdminCancelOrganizationInvitation(ctx context.Context, arg AdminCancelOrganizationInvitationParams) (string, error)
 	AdminCountAuditEvents(ctx context.Context, search string) (int32, error)
 	AdminCountOrganizations(ctx context.Context, arg AdminCountOrganizationsParams) (int32, error)
@@ -43,16 +44,25 @@ type Querier interface {
 	AdminUpsertOrganizationMember(ctx context.Context, arg AdminUpsertOrganizationMemberParams) error
 	AdminUpsertOrganizationOwner(ctx context.Context, arg AdminUpsertOrganizationOwnerParams) error
 	AdminUserGrowth(ctx context.Context) ([]AdminUserGrowthRow, error)
+	ClearOrganizationFromUserSessions(ctx context.Context, arg ClearOrganizationFromUserSessionsParams) error
 	CountActiveUserSessions(ctx context.Context, userID string) (int32, error)
+	CountOrganizationAuditEvents(ctx context.Context, organizationID pgtype.Text) (int64, error)
+	CountOrganizationOwners(ctx context.Context, organizationID string) (int32, error)
 	CreateAuthEvent(ctx context.Context, arg CreateAuthEventParams) error
 	CreateCredentialAccount(ctx context.Context, arg CreateCredentialAccountParams) error
 	CreateEmailVerification(ctx context.Context, arg CreateEmailVerificationParams) error
 	CreateImpersonatedSession(ctx context.Context, arg CreateImpersonatedSessionParams) (Session, error)
+	CreateOrganizationAuditEvent(ctx context.Context, arg CreateOrganizationAuditEventParams) error
+	CreateOrganizationTeam(ctx context.Context, arg CreateOrganizationTeamParams) (Team, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTwoFactorChallenge(ctx context.Context, arg CreateTwoFactorChallengeParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteAllUserSessions(ctx context.Context, userID string) error
 	DeleteEmailVerification(ctx context.Context, id string) error
+	DeleteOrganizationMember(ctx context.Context, arg DeleteOrganizationMemberParams) (Member, error)
+	DeleteOrganizationMemberTeams(ctx context.Context, arg DeleteOrganizationMemberTeamsParams) error
+	DeleteOrganizationTeam(ctx context.Context, arg DeleteOrganizationTeamParams) (Team, error)
+	DeleteOrganizationTeamMember(ctx context.Context, arg DeleteOrganizationTeamMemberParams) (int64, error)
 	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
 	DeleteSession(ctx context.Context, token string) error
 	DeleteTwoFactor(ctx context.Context, userID string) error
@@ -64,17 +74,31 @@ type Querier interface {
 	GetActivePasswordReset(ctx context.Context, value string) (GetActivePasswordResetRow, error)
 	GetCredentialPasswordByUserID(ctx context.Context, userID string) (pgtype.Text, error)
 	GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error)
+	GetOrganizationMembership(ctx context.Context, arg GetOrganizationMembershipParams) (GetOrganizationMembershipRow, error)
+	GetOrganizationTeam(ctx context.Context, arg GetOrganizationTeamParams) (Team, error)
 	GetPasswordResetUserByEmail(ctx context.Context, lower string) (GetPasswordResetUserByEmailRow, error)
 	GetRecentEmailVerification(ctx context.Context, identifier string) (pgtype.Timestamp, error)
 	GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error)
 	GetTwoFactorByUserID(ctx context.Context, userID string) (TwoFactor, error)
 	GetTwoFactorChallenge(ctx context.Context, token string) (GetTwoFactorChallengeRow, error)
 	GetUserSignInActivity(ctx context.Context, userID string) ([]GetUserSignInActivityRow, error)
+	ListOrganizationAuditEvents(ctx context.Context, arg ListOrganizationAuditEventsParams) ([]ListOrganizationAuditEventsRow, error)
+	ListOrganizationInvitations(ctx context.Context, organizationID string) ([]ListOrganizationInvitationsRow, error)
+	ListOrganizationMembers(ctx context.Context, organizationID string) ([]ListOrganizationMembersRow, error)
+	ListOrganizationTeamMembers(ctx context.Context, arg ListOrganizationTeamMembersParams) ([]ListOrganizationTeamMembersRow, error)
+	ListOrganizationTeams(ctx context.Context, arg ListOrganizationTeamsParams) ([]ListOrganizationTeamsRow, error)
+	ListUserOrganizations(ctx context.Context, userID string) ([]ListUserOrganizationsRow, error)
 	ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error)
 	MarkUserEmailVerified(ctx context.Context, id string) error
 	Ping(ctx context.Context) (int32, error)
 	RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) (string, error)
+	SetOrganizationTeamArchived(ctx context.Context, arg SetOrganizationTeamArchivedParams) (Team, error)
+	SetSessionActiveOrganization(ctx context.Context, arg SetSessionActiveOrganizationParams) error
+	TransferOrganizationOwnership(ctx context.Context, arg TransferOrganizationOwnershipParams) error
 	UpdateCredentialPassword(ctx context.Context, arg UpdateCredentialPasswordParams) error
+	UpdateOrganizationMemberRole(ctx context.Context, arg UpdateOrganizationMemberRoleParams) (Member, error)
+	UpdateOrganizationTeam(ctx context.Context, arg UpdateOrganizationTeamParams) (Team, error)
+	UpdateOrganizationWorkspace(ctx context.Context, arg UpdateOrganizationWorkspaceParams) (Organization, error)
 	UpdateTwoFactorBackupCodes(ctx context.Context, arg UpdateTwoFactorBackupCodesParams) error
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpsertPendingTwoFactor(ctx context.Context, arg UpsertPendingTwoFactorParams) (TwoFactor, error)

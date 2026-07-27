@@ -853,6 +853,194 @@ LEFT JOIN users
 GROUP BY days.day
 ORDER BY days.day;
 
+-- name: ListUserOrganizations :many
+SELECT
+    organizations.id, organizations.name, organizations.slug,
+    organizations.logo, organizations.metadata, members.role,
+    organizations.created_at, organizations.updated_at
+FROM members
+JOIN organizations ON organizations.id = members.organization_id
+WHERE members.user_id = $1 AND organizations.deleted_at IS NULL
+ORDER BY organizations.name;
+
+-- name: GetOrganizationMembership :one
+SELECT
+    organizations.id, organizations.name, organizations.slug,
+    organizations.logo, organizations.metadata, organizations.created_at,
+    organizations.updated_at, members.role,
+    members.created_at AS member_since
+FROM members
+JOIN organizations ON organizations.id = members.organization_id
+WHERE organizations.slug = $1 AND members.user_id = $2
+  AND organizations.deleted_at IS NULL;
+
+-- name: SetSessionActiveOrganization :exec
+UPDATE sessions
+SET active_organization_id = $2, active_team_id = NULL
+WHERE id = $1 AND user_id = $3;
+
+-- name: UpdateOrganizationWorkspace :one
+UPDATE organizations
+SET name = $2, slug = $3, logo = $4, metadata = $5
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING *;
+
+-- name: ListOrganizationMembers :many
+SELECT
+    members.id, members.role, members.created_at,
+    users.id AS user_id, users.name, users.email, users.image,
+    users.email_verified
+FROM members
+JOIN users ON users.id = members.user_id
+WHERE members.organization_id = $1 AND users.deleted_at IS NULL
+ORDER BY
+    CASE members.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+    users.name;
+
+-- name: CountOrganizationOwners :one
+SELECT count(*)::int
+FROM members
+WHERE organization_id = $1 AND role = 'owner';
+
+-- name: ListOrganizationInvitations :many
+SELECT id, email, role, status, expires_at, created_at, invited_user_id
+FROM invitations
+WHERE organization_id = $1
+ORDER BY created_at DESC;
+
+-- name: UpdateOrganizationMemberRole :one
+UPDATE members SET role = $3
+WHERE organization_id = $1 AND user_id = $2
+RETURNING *;
+
+-- name: DeleteOrganizationMember :one
+DELETE FROM members
+WHERE organization_id = $1 AND user_id = $2
+RETURNING *;
+
+-- name: DeleteOrganizationMemberTeams :exec
+DELETE FROM team_members
+USING teams
+WHERE team_members.team_id = teams.id
+  AND teams.organization_id = $1
+  AND team_members.user_id = $2;
+
+-- name: ClearOrganizationFromUserSessions :exec
+UPDATE sessions
+SET active_organization_id = NULL, active_team_id = NULL
+WHERE user_id = $1 AND active_organization_id = $2;
+
+-- name: CreateOrganizationTeam :one
+INSERT INTO teams (
+    id, name, description, organization_id, lead_user_id, created_at, updated_at
+) VALUES (
+    $1, $2, $3, $4, $5, (now() AT TIME ZONE 'UTC'), (now() AT TIME ZONE 'UTC')
+)
+RETURNING *;
+
+-- name: ListOrganizationTeams :many
+SELECT
+    teams.id, teams.name, teams.description, teams.lead_user_id,
+    teams.created_at, teams.updated_at, teams.archived_at,
+    lead.name AS lead_name, count(team_members.id)::int AS member_count
+FROM teams
+LEFT JOIN users AS lead ON lead.id = teams.lead_user_id
+LEFT JOIN team_members ON team_members.team_id = teams.id
+WHERE teams.organization_id = $1
+  AND (sqlc.arg(include_archived)::boolean OR teams.archived_at IS NULL)
+GROUP BY teams.id, lead.id
+ORDER BY teams.archived_at NULLS FIRST, teams.name;
+
+-- name: GetOrganizationTeam :one
+SELECT * FROM teams
+WHERE id = $1 AND organization_id = $2;
+
+-- name: UpdateOrganizationTeam :one
+UPDATE teams SET name = $3, description = $4, lead_user_id = $5
+WHERE id = $1 AND organization_id = $2
+RETURNING *;
+
+-- name: SetOrganizationTeamArchived :one
+UPDATE teams
+SET archived_at = CASE
+    WHEN sqlc.arg(archived)::boolean THEN (now() AT TIME ZONE 'UTC')
+    ELSE NULL
+END
+WHERE id = $1 AND organization_id = $2
+RETURNING *;
+
+-- name: DeleteOrganizationTeam :one
+DELETE FROM teams WHERE id = $1 AND organization_id = $2
+RETURNING *;
+
+-- name: ListOrganizationTeamMembers :many
+SELECT
+    team_members.id, users.id AS user_id, users.name, users.email,
+    users.image, members.role AS organization_role, team_members.created_at
+FROM team_members
+JOIN users ON users.id = team_members.user_id
+JOIN members
+  ON members.user_id = users.id
+ AND members.organization_id = sqlc.arg(organization_id)::text
+WHERE team_members.team_id = sqlc.arg(team_id)::text
+ORDER BY users.name;
+
+-- name: AddOrganizationTeamMember :execrows
+INSERT INTO team_members (id, team_id, user_id, created_at)
+SELECT
+    sqlc.arg(id)::text, sqlc.arg(team_id)::text, sqlc.arg(user_id)::text,
+    (now() AT TIME ZONE 'UTC')
+WHERE EXISTS (
+    SELECT 1 FROM teams
+    JOIN members ON members.organization_id = teams.organization_id
+    WHERE teams.id = sqlc.arg(team_id)::text
+      AND teams.organization_id = sqlc.arg(organization_id)::text
+      AND members.user_id = sqlc.arg(user_id)::text
+)
+ON CONFLICT (team_id, user_id) DO NOTHING;
+
+-- name: DeleteOrganizationTeamMember :execrows
+DELETE FROM team_members USING teams
+WHERE team_members.team_id = teams.id
+  AND teams.id = sqlc.arg(team_id)::text
+  AND teams.organization_id = sqlc.arg(organization_id)::text
+  AND team_members.user_id = sqlc.arg(user_id)::text;
+
+-- name: TransferOrganizationOwnership :exec
+UPDATE members
+SET role = CASE
+    WHEN user_id = sqlc.arg(new_owner_id)::text THEN 'owner'
+    WHEN role = 'owner' THEN 'admin'
+    ELSE role
+END
+WHERE organization_id = sqlc.arg(organization_id)::text
+  AND (role = 'owner' OR user_id = sqlc.arg(new_owner_id)::text);
+
+-- name: CreateOrganizationAuditEvent :exec
+INSERT INTO auth_events (
+    id, user_id, event_type, ip_address, user_agent, target_type,
+    target_id, reason, before_state, after_state, organization_id, created_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+    (now() AT TIME ZONE 'UTC')
+);
+
+-- name: ListOrganizationAuditEvents :many
+SELECT
+    auth_events.id, auth_events.event_type, auth_events.target_type,
+    auth_events.target_id, auth_events.reason, auth_events.before_state,
+    auth_events.after_state, auth_events.ip_address, auth_events.user_agent,
+    auth_events.created_at, users.id AS actor_id, users.name AS actor_name,
+    users.email AS actor_email
+FROM auth_events
+LEFT JOIN users ON users.id = auth_events.user_id
+WHERE auth_events.organization_id = $1
+ORDER BY auth_events.created_at DESC
+LIMIT $2 OFFSET $3;
+
+-- name: CountOrganizationAuditEvents :one
+SELECT count(*) FROM auth_events WHERE organization_id = $1;
+
 -- name: CountActiveUserSessions :one
 SELECT count(*)::integer
 FROM sessions

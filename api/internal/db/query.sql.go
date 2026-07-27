@@ -21,13 +21,48 @@ WHERE id = $1
 `
 
 type AcceptOrganizationInvitationParams struct {
-	ID            string
-	InvitedUserID pgtype.Text
+	ID            string      `json:"id"`
+	InvitedUserID pgtype.Text `json:"invitedUserId"`
 }
 
 func (q *Queries) AcceptOrganizationInvitation(ctx context.Context, arg AcceptOrganizationInvitationParams) error {
 	_, err := q.db.Exec(ctx, acceptOrganizationInvitation, arg.ID, arg.InvitedUserID)
 	return err
+}
+
+const addOrganizationTeamMember = `-- name: AddOrganizationTeamMember :execrows
+INSERT INTO team_members (id, team_id, user_id, created_at)
+SELECT
+    $1::text, $2::text, $3::text,
+    (now() AT TIME ZONE 'UTC')
+WHERE EXISTS (
+    SELECT 1 FROM teams
+    JOIN members ON members.organization_id = teams.organization_id
+    WHERE teams.id = $2::text
+      AND teams.organization_id = $4::text
+      AND members.user_id = $3::text
+)
+ON CONFLICT (team_id, user_id) DO NOTHING
+`
+
+type AddOrganizationTeamMemberParams struct {
+	ID             string `json:"id"`
+	TeamID         string `json:"teamId"`
+	UserID         string `json:"userId"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) AddOrganizationTeamMember(ctx context.Context, arg AddOrganizationTeamMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, addOrganizationTeamMember,
+		arg.ID,
+		arg.TeamID,
+		arg.UserID,
+		arg.OrganizationID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const adminCancelOrganizationInvitation = `-- name: AdminCancelOrganizationInvitation :one
@@ -40,8 +75,8 @@ RETURNING id
 `
 
 type AdminCancelOrganizationInvitationParams struct {
-	ID             string
-	OrganizationID string
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
 }
 
 func (q *Queries) AdminCancelOrganizationInvitation(ctx context.Context, arg AdminCancelOrganizationInvitationParams) (string, error) {
@@ -86,8 +121,8 @@ AND (
 `
 
 type AdminCountOrganizationsParams struct {
-	IncludeDeleted bool
-	Search         string
+	IncludeDeleted bool   `json:"includeDeleted"`
+	Search         string `json:"search"`
 }
 
 func (q *Queries) AdminCountOrganizations(ctx context.Context, arg AdminCountOrganizationsParams) (int32, error) {
@@ -150,10 +185,10 @@ AND (
 `
 
 type AdminCountUsersParams struct {
-	IncludeDeleted bool
-	Search         string
-	Role           string
-	Status         string
+	IncludeDeleted bool   `json:"includeDeleted"`
+	Search         string `json:"search"`
+	Role           string `json:"role"`
+	Status         string `json:"status"`
 }
 
 func (q *Queries) AdminCountUsers(ctx context.Context, arg AdminCountUsersParams) (int32, error) {
@@ -198,15 +233,15 @@ INSERT INTO organizations (
     (now() AT TIME ZONE 'UTC'),
     $5
 )
-RETURNING id, name, slug, logo, created_at, metadata, deleted_at
+RETURNING id, name, slug, logo, created_at, metadata, deleted_at, updated_at
 `
 
 type AdminCreateOrganizationParams struct {
-	ID       string
-	Name     string
-	Slug     string
-	Logo     pgtype.Text
-	Metadata pgtype.Text
+	ID       string      `json:"id"`
+	Name     string      `json:"name"`
+	Slug     string      `json:"slug"`
+	Logo     pgtype.Text `json:"logo"`
+	Metadata pgtype.Text `json:"metadata"`
 }
 
 func (q *Queries) AdminCreateOrganization(ctx context.Context, arg AdminCreateOrganizationParams) (Organization, error) {
@@ -226,6 +261,7 @@ func (q *Queries) AdminCreateOrganization(ctx context.Context, arg AdminCreateOr
 		&i.CreatedAt,
 		&i.Metadata,
 		&i.DeletedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -256,14 +292,14 @@ RETURNING id, organization_id, email, role, team_id, status, expires_at, created
 `
 
 type AdminCreateOrganizationInvitationParams struct {
-	ID             string
-	OrganizationID string
-	Email          string
-	Role           pgtype.Text
-	ExpiresAt      pgtype.Timestamp
-	InviterID      string
-	Token          pgtype.Text
-	InvitedUserID  pgtype.Text
+	ID             string           `json:"id"`
+	OrganizationID string           `json:"organizationId"`
+	Email          string           `json:"email"`
+	Role           pgtype.Text      `json:"role"`
+	ExpiresAt      pgtype.Timestamp `json:"expiresAt"`
+	InviterID      string           `json:"inviterId"`
+	Token          pgtype.Text      `json:"token"`
+	InvitedUserID  pgtype.Text      `json:"invitedUserId"`
 }
 
 func (q *Queries) AdminCreateOrganizationInvitation(ctx context.Context, arg AdminCreateOrganizationInvitationParams) (Invitation, error) {
@@ -315,12 +351,12 @@ RETURNING id, name, email, email_verified, image, created_at, updated_at, role, 
 `
 
 type AdminCreateUserParams struct {
-	ID            string
-	Name          string
-	Email         string
-	EmailVerified bool
-	Image         pgtype.Text
-	Role          string
+	ID            string      `json:"id"`
+	Name          string      `json:"name"`
+	Email         string      `json:"email"`
+	EmailVerified bool        `json:"emailVerified"`
+	Image         pgtype.Text `json:"image"`
+	Role          string      `json:"role"`
 }
 
 func (q *Queries) AdminCreateUser(ctx context.Context, arg AdminCreateUserParams) (User, error) {
@@ -367,12 +403,12 @@ SELECT
 `
 
 type AdminDashboardMetricsRow struct {
-	TotalUsers         int32
-	BannedUsers        int32
-	VerifiedUsers      int32
-	TotalOrganizations int32
-	ActiveSessions     int32
-	PendingInvitations int32
+	TotalUsers         int32 `json:"totalUsers"`
+	BannedUsers        int32 `json:"bannedUsers"`
+	VerifiedUsers      int32 `json:"verifiedUsers"`
+	TotalOrganizations int32 `json:"totalOrganizations"`
+	ActiveSessions     int32 `json:"activeSessions"`
+	PendingInvitations int32 `json:"pendingInvitations"`
 }
 
 func (q *Queries) AdminDashboardMetrics(ctx context.Context) (AdminDashboardMetricsRow, error) {
@@ -397,8 +433,8 @@ RETURNING id, organization_id, user_id, role, created_at
 `
 
 type AdminDeleteOrganizationMemberParams struct {
-	OrganizationID string
-	UserID         string
+	OrganizationID string `json:"organizationId"`
+	UserID         string `json:"userId"`
 }
 
 func (q *Queries) AdminDeleteOrganizationMember(ctx context.Context, arg AdminDeleteOrganizationMemberParams) (Member, error) {
@@ -422,8 +458,8 @@ WHERE organization_id = $1
 `
 
 type AdminDeletePendingOrganizationInvitationsParams struct {
-	OrganizationID string
-	Email          string
+	OrganizationID string `json:"organizationId"`
+	Email          string `json:"email"`
 }
 
 func (q *Queries) AdminDeletePendingOrganizationInvitations(ctx context.Context, arg AdminDeletePendingOrganizationInvitationsParams) error {
@@ -444,7 +480,7 @@ func (q *Queries) AdminDemoteOrganizationOwners(ctx context.Context, organizatio
 }
 
 const adminGetOrganization = `-- name: AdminGetOrganization :one
-SELECT id, name, slug, logo, created_at, metadata, deleted_at
+SELECT id, name, slug, logo, created_at, metadata, deleted_at, updated_at
 FROM organizations
 WHERE id = $1
 `
@@ -460,6 +496,7 @@ func (q *Queries) AdminGetOrganization(ctx context.Context, id string) (Organiza
 		&i.CreatedAt,
 		&i.Metadata,
 		&i.DeletedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -472,8 +509,8 @@ WHERE organization_id = $1
 `
 
 type AdminGetOrganizationMemberParams struct {
-	OrganizationID string
-	UserID         string
+	OrganizationID string `json:"organizationId"`
+	UserID         string `json:"userId"`
 }
 
 func (q *Queries) AdminGetOrganizationMember(ctx context.Context, arg AdminGetOrganizationMemberParams) (Member, error) {
@@ -545,25 +582,25 @@ OFFSET $2::integer
 `
 
 type AdminListAuditEventsParams struct {
-	Search     string
-	PageOffset int32
-	PageSize   int32
+	Search     string `json:"search"`
+	PageOffset int32  `json:"pageOffset"`
+	PageSize   int32  `json:"pageSize"`
 }
 
 type AdminListAuditEventsRow struct {
-	ID          string
-	EventType   string
-	CreatedAt   pgtype.Timestamp
-	IpAddress   pgtype.Text
-	UserAgent   pgtype.Text
-	TargetType  pgtype.Text
-	TargetID    pgtype.Text
-	Reason      pgtype.Text
-	BeforeState []byte
-	AfterState  []byte
-	ActorID     string
-	ActorName   string
-	ActorEmail  string
+	ID          string           `json:"id"`
+	EventType   string           `json:"eventType"`
+	CreatedAt   pgtype.Timestamp `json:"createdAt"`
+	IpAddress   pgtype.Text      `json:"ipAddress"`
+	UserAgent   pgtype.Text      `json:"userAgent"`
+	TargetType  pgtype.Text      `json:"targetType"`
+	TargetID    pgtype.Text      `json:"targetId"`
+	Reason      pgtype.Text      `json:"reason"`
+	BeforeState []byte           `json:"beforeState"`
+	AfterState  []byte           `json:"afterState"`
+	ActorID     string           `json:"actorId"`
+	ActorName   string           `json:"actorName"`
+	ActorEmail  string           `json:"actorEmail"`
 }
 
 func (q *Queries) AdminListAuditEvents(ctx context.Context, arg AdminListAuditEventsParams) ([]AdminListAuditEventsRow, error) {
@@ -615,13 +652,13 @@ ORDER BY invitations.created_at DESC
 `
 
 type AdminListOrganizationInvitationsRow struct {
-	ID            string
-	Email         string
-	Role          pgtype.Text
-	Status        string
-	ExpiresAt     pgtype.Timestamp
-	CreatedAt     pgtype.Timestamp
-	InvitedUserID pgtype.Text
+	ID            string           `json:"id"`
+	Email         string           `json:"email"`
+	Role          pgtype.Text      `json:"role"`
+	Status        string           `json:"status"`
+	ExpiresAt     pgtype.Timestamp `json:"expiresAt"`
+	CreatedAt     pgtype.Timestamp `json:"createdAt"`
+	InvitedUserID pgtype.Text      `json:"invitedUserId"`
 }
 
 func (q *Queries) AdminListOrganizationInvitations(ctx context.Context, organizationID string) ([]AdminListOrganizationInvitationsRow, error) {
@@ -672,15 +709,15 @@ ORDER BY
 `
 
 type AdminListOrganizationMembersRow struct {
-	ID        string
-	Role      string
-	CreatedAt pgtype.Timestamp
-	UserID    string
-	Name      string
-	Email     string
-	Image     pgtype.Text
-	Banned    pgtype.Bool
-	DeletedAt pgtype.Timestamp
+	ID        string           `json:"id"`
+	Role      string           `json:"role"`
+	CreatedAt pgtype.Timestamp `json:"createdAt"`
+	UserID    string           `json:"userId"`
+	Name      string           `json:"name"`
+	Email     string           `json:"email"`
+	Image     pgtype.Text      `json:"image"`
+	Banned    pgtype.Bool      `json:"banned"`
+	DeletedAt pgtype.Timestamp `json:"deletedAt"`
 }
 
 func (q *Queries) AdminListOrganizationMembers(ctx context.Context, organizationID string) ([]AdminListOrganizationMembersRow, error) {
@@ -748,24 +785,24 @@ OFFSET $3::integer
 `
 
 type AdminListOrganizationsParams struct {
-	IncludeDeleted bool
-	Search         string
-	PageOffset     int32
-	PageSize       int32
+	IncludeDeleted bool   `json:"includeDeleted"`
+	Search         string `json:"search"`
+	PageOffset     int32  `json:"pageOffset"`
+	PageSize       int32  `json:"pageSize"`
 }
 
 type AdminListOrganizationsRow struct {
-	ID          string
-	Name        string
-	Slug        string
-	Logo        pgtype.Text
-	CreatedAt   pgtype.Timestamp
-	Metadata    pgtype.Text
-	DeletedAt   pgtype.Timestamp
-	OwnerID     pgtype.Text
-	OwnerName   pgtype.Text
-	OwnerEmail  pgtype.Text
-	MemberCount int32
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Slug        string           `json:"slug"`
+	Logo        pgtype.Text      `json:"logo"`
+	CreatedAt   pgtype.Timestamp `json:"createdAt"`
+	Metadata    pgtype.Text      `json:"metadata"`
+	DeletedAt   pgtype.Timestamp `json:"deletedAt"`
+	OwnerID     pgtype.Text      `json:"ownerId"`
+	OwnerName   pgtype.Text      `json:"ownerName"`
+	OwnerEmail  pgtype.Text      `json:"ownerEmail"`
+	MemberCount int32            `json:"memberCount"`
 }
 
 func (q *Queries) AdminListOrganizations(ctx context.Context, arg AdminListOrganizationsParams) ([]AdminListOrganizationsRow, error) {
@@ -866,28 +903,28 @@ OFFSET $5::integer
 `
 
 type AdminListUsersParams struct {
-	IncludeDeleted bool
-	Search         string
-	Role           string
-	Status         string
-	PageOffset     int32
-	PageSize       int32
+	IncludeDeleted bool   `json:"includeDeleted"`
+	Search         string `json:"search"`
+	Role           string `json:"role"`
+	Status         string `json:"status"`
+	PageOffset     int32  `json:"pageOffset"`
+	PageSize       int32  `json:"pageSize"`
 }
 
 type AdminListUsersRow struct {
-	ID                string
-	Name              string
-	Email             string
-	EmailVerified     bool
-	Image             pgtype.Text
-	Role              string
-	Banned            bool
-	BanReason         pgtype.Text
-	BanExpires        pgtype.Timestamp
-	DeletedAt         pgtype.Timestamp
-	CreatedAt         pgtype.Timestamp
-	ActiveSessions    int32
-	OrganizationCount int32
+	ID                string           `json:"id"`
+	Name              string           `json:"name"`
+	Email             string           `json:"email"`
+	EmailVerified     bool             `json:"emailVerified"`
+	Image             pgtype.Text      `json:"image"`
+	Role              string           `json:"role"`
+	Banned            bool             `json:"banned"`
+	BanReason         pgtype.Text      `json:"banReason"`
+	BanExpires        pgtype.Timestamp `json:"banExpires"`
+	DeletedAt         pgtype.Timestamp `json:"deletedAt"`
+	CreatedAt         pgtype.Timestamp `json:"createdAt"`
+	ActiveSessions    int32            `json:"activeSessions"`
+	OrganizationCount int32            `json:"organizationCount"`
 }
 
 func (q *Queries) AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error) {
@@ -936,7 +973,7 @@ UPDATE organizations
 SET deleted_at = NULL
 WHERE id = $1
   AND deleted_at IS NOT NULL
-RETURNING id, name, slug, logo, created_at, metadata, deleted_at
+RETURNING id, name, slug, logo, created_at, metadata, deleted_at, updated_at
 `
 
 func (q *Queries) AdminRestoreOrganization(ctx context.Context, id string) (Organization, error) {
@@ -950,6 +987,7 @@ func (q *Queries) AdminRestoreOrganization(ctx context.Context, id string) (Orga
 		&i.CreatedAt,
 		&i.Metadata,
 		&i.DeletedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -994,10 +1032,10 @@ RETURNING id, name, email, email_verified, image, created_at, updated_at, role, 
 `
 
 type AdminSetUserBanParams struct {
-	ID         string
-	Banned     pgtype.Bool
-	BanReason  pgtype.Text
-	BanExpires pgtype.Timestamp
+	ID         string           `json:"id"`
+	Banned     pgtype.Bool      `json:"banned"`
+	BanReason  pgtype.Text      `json:"banReason"`
+	BanExpires pgtype.Timestamp `json:"banExpires"`
 }
 
 func (q *Queries) AdminSetUserBan(ctx context.Context, arg AdminSetUserBanParams) (User, error) {
@@ -1030,7 +1068,7 @@ UPDATE organizations
 SET deleted_at = (now() AT TIME ZONE 'UTC')
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, name, slug, logo, created_at, metadata, deleted_at
+RETURNING id, name, slug, logo, created_at, metadata, deleted_at, updated_at
 `
 
 func (q *Queries) AdminSoftDeleteOrganization(ctx context.Context, id string) (Organization, error) {
@@ -1044,6 +1082,7 @@ func (q *Queries) AdminSoftDeleteOrganization(ctx context.Context, id string) (O
 		&i.CreatedAt,
 		&i.Metadata,
 		&i.DeletedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1085,15 +1124,15 @@ SET
     metadata = $5
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, name, slug, logo, created_at, metadata, deleted_at
+RETURNING id, name, slug, logo, created_at, metadata, deleted_at, updated_at
 `
 
 type AdminUpdateOrganizationParams struct {
-	ID       string
-	Name     string
-	Slug     string
-	Logo     pgtype.Text
-	Metadata pgtype.Text
+	ID       string      `json:"id"`
+	Name     string      `json:"name"`
+	Slug     string      `json:"slug"`
+	Logo     pgtype.Text `json:"logo"`
+	Metadata pgtype.Text `json:"metadata"`
 }
 
 func (q *Queries) AdminUpdateOrganization(ctx context.Context, arg AdminUpdateOrganizationParams) (Organization, error) {
@@ -1113,6 +1152,7 @@ func (q *Queries) AdminUpdateOrganization(ctx context.Context, arg AdminUpdateOr
 		&i.CreatedAt,
 		&i.Metadata,
 		&i.DeletedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1134,12 +1174,12 @@ RETURNING id, name, email, email_verified, image, created_at, updated_at, role, 
 `
 
 type AdminUpdateUserParams struct {
-	ID            string
-	Name          string
-	Email         string
-	EmailVerified bool
-	Image         pgtype.Text
-	Role          string
+	ID            string      `json:"id"`
+	Name          string      `json:"name"`
+	Email         string      `json:"email"`
+	EmailVerified bool        `json:"emailVerified"`
+	Image         pgtype.Text `json:"image"`
+	Role          string      `json:"role"`
 }
 
 func (q *Queries) AdminUpdateUser(ctx context.Context, arg AdminUpdateUserParams) (User, error) {
@@ -1188,10 +1228,10 @@ SET role = excluded.role
 `
 
 type AdminUpsertOrganizationMemberParams struct {
-	ID             string
-	OrganizationID string
-	UserID         string
-	Role           string
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+	UserID         string `json:"userId"`
+	Role           string `json:"role"`
 }
 
 func (q *Queries) AdminUpsertOrganizationMember(ctx context.Context, arg AdminUpsertOrganizationMemberParams) error {
@@ -1223,9 +1263,9 @@ SET role = 'owner'
 `
 
 type AdminUpsertOrganizationOwnerParams struct {
-	ID             string
-	OrganizationID string
-	UserID         string
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+	UserID         string `json:"userId"`
 }
 
 func (q *Queries) AdminUpsertOrganizationOwner(ctx context.Context, arg AdminUpsertOrganizationOwnerParams) error {
@@ -1250,8 +1290,8 @@ ORDER BY days.day
 `
 
 type AdminUserGrowthRow struct {
-	Day   pgtype.Date
-	Users int32
+	Day   pgtype.Date `json:"day"`
+	Users int32       `json:"users"`
 }
 
 func (q *Queries) AdminUserGrowth(ctx context.Context) ([]AdminUserGrowthRow, error) {
@@ -1274,6 +1314,22 @@ func (q *Queries) AdminUserGrowth(ctx context.Context) ([]AdminUserGrowthRow, er
 	return items, nil
 }
 
+const clearOrganizationFromUserSessions = `-- name: ClearOrganizationFromUserSessions :exec
+UPDATE sessions
+SET active_organization_id = NULL, active_team_id = NULL
+WHERE user_id = $1 AND active_organization_id = $2
+`
+
+type ClearOrganizationFromUserSessionsParams struct {
+	UserID               string      `json:"userId"`
+	ActiveOrganizationID pgtype.Text `json:"activeOrganizationId"`
+}
+
+func (q *Queries) ClearOrganizationFromUserSessions(ctx context.Context, arg ClearOrganizationFromUserSessionsParams) error {
+	_, err := q.db.Exec(ctx, clearOrganizationFromUserSessions, arg.UserID, arg.ActiveOrganizationID)
+	return err
+}
+
 const countActiveUserSessions = `-- name: CountActiveUserSessions :one
 SELECT count(*)::integer
 FROM sessions
@@ -1283,6 +1339,30 @@ WHERE user_id = $1
 
 func (q *Queries) CountActiveUserSessions(ctx context.Context, userID string) (int32, error) {
 	row := q.db.QueryRow(ctx, countActiveUserSessions, userID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countOrganizationAuditEvents = `-- name: CountOrganizationAuditEvents :one
+SELECT count(*) FROM auth_events WHERE organization_id = $1
+`
+
+func (q *Queries) CountOrganizationAuditEvents(ctx context.Context, organizationID pgtype.Text) (int64, error) {
+	row := q.db.QueryRow(ctx, countOrganizationAuditEvents, organizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOrganizationOwners = `-- name: CountOrganizationOwners :one
+SELECT count(*)::int
+FROM members
+WHERE organization_id = $1 AND role = 'owner'
+`
+
+func (q *Queries) CountOrganizationOwners(ctx context.Context, organizationID string) (int32, error) {
+	row := q.db.QueryRow(ctx, countOrganizationOwners, organizationID)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -1315,16 +1395,16 @@ INSERT INTO auth_events (
 `
 
 type CreateAuthEventParams struct {
-	ID          string
-	UserID      string
-	EventType   string
-	IpAddress   pgtype.Text
-	UserAgent   pgtype.Text
-	TargetType  pgtype.Text
-	TargetID    pgtype.Text
-	Reason      pgtype.Text
-	BeforeState []byte
-	AfterState  []byte
+	ID          string      `json:"id"`
+	UserID      string      `json:"userId"`
+	EventType   string      `json:"eventType"`
+	IpAddress   pgtype.Text `json:"ipAddress"`
+	UserAgent   pgtype.Text `json:"userAgent"`
+	TargetType  pgtype.Text `json:"targetType"`
+	TargetID    pgtype.Text `json:"targetId"`
+	Reason      pgtype.Text `json:"reason"`
+	BeforeState []byte      `json:"beforeState"`
+	AfterState  []byte      `json:"afterState"`
 }
 
 func (q *Queries) CreateAuthEvent(ctx context.Context, arg CreateAuthEventParams) error {
@@ -1360,10 +1440,10 @@ INSERT INTO accounts (
 `
 
 type CreateCredentialAccountParams struct {
-	ID        string
-	AccountID string
-	UserID    string
-	Password  pgtype.Text
+	ID        string      `json:"id"`
+	AccountID string      `json:"accountId"`
+	UserID    string      `json:"userId"`
+	Password  pgtype.Text `json:"password"`
 }
 
 func (q *Queries) CreateCredentialAccount(ctx context.Context, arg CreateCredentialAccountParams) error {
@@ -1391,10 +1471,10 @@ INSERT INTO verifications (
 `
 
 type CreateEmailVerificationParams struct {
-	ID         string
-	Identifier string
-	Value      string
-	ExpiresAt  pgtype.Timestamp
+	ID         string           `json:"id"`
+	Identifier string           `json:"identifier"`
+	Value      string           `json:"value"`
+	ExpiresAt  pgtype.Timestamp `json:"expiresAt"`
 }
 
 func (q *Queries) CreateEmailVerification(ctx context.Context, arg CreateEmailVerificationParams) error {
@@ -1431,14 +1511,14 @@ RETURNING id, expires_at, token, created_at, updated_at, ip_address, user_agent,
 `
 
 type CreateImpersonatedSessionParams struct {
-	ID                  string
-	ExpiresAt           pgtype.Timestamp
-	Token               string
-	IpAddress           pgtype.Text
-	UserAgent           pgtype.Text
-	UserID              string
-	ImpersonatedBy      pgtype.Text
-	ImpersonationReason pgtype.Text
+	ID                  string           `json:"id"`
+	ExpiresAt           pgtype.Timestamp `json:"expiresAt"`
+	Token               string           `json:"token"`
+	IpAddress           pgtype.Text      `json:"ipAddress"`
+	UserAgent           pgtype.Text      `json:"userAgent"`
+	UserID              string           `json:"userId"`
+	ImpersonatedBy      pgtype.Text      `json:"impersonatedBy"`
+	ImpersonationReason pgtype.Text      `json:"impersonationReason"`
 }
 
 func (q *Queries) CreateImpersonatedSession(ctx context.Context, arg CreateImpersonatedSessionParams) (Session, error) {
@@ -1470,6 +1550,86 @@ func (q *Queries) CreateImpersonatedSession(ctx context.Context, arg CreateImper
 	return i, err
 }
 
+const createOrganizationAuditEvent = `-- name: CreateOrganizationAuditEvent :exec
+INSERT INTO auth_events (
+    id, user_id, event_type, ip_address, user_agent, target_type,
+    target_id, reason, before_state, after_state, organization_id, created_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+    (now() AT TIME ZONE 'UTC')
+)
+`
+
+type CreateOrganizationAuditEventParams struct {
+	ID             string      `json:"id"`
+	UserID         string      `json:"userId"`
+	EventType      string      `json:"eventType"`
+	IpAddress      pgtype.Text `json:"ipAddress"`
+	UserAgent      pgtype.Text `json:"userAgent"`
+	TargetType     pgtype.Text `json:"targetType"`
+	TargetID       pgtype.Text `json:"targetId"`
+	Reason         pgtype.Text `json:"reason"`
+	BeforeState    []byte      `json:"beforeState"`
+	AfterState     []byte      `json:"afterState"`
+	OrganizationID pgtype.Text `json:"organizationId"`
+}
+
+func (q *Queries) CreateOrganizationAuditEvent(ctx context.Context, arg CreateOrganizationAuditEventParams) error {
+	_, err := q.db.Exec(ctx, createOrganizationAuditEvent,
+		arg.ID,
+		arg.UserID,
+		arg.EventType,
+		arg.IpAddress,
+		arg.UserAgent,
+		arg.TargetType,
+		arg.TargetID,
+		arg.Reason,
+		arg.BeforeState,
+		arg.AfterState,
+		arg.OrganizationID,
+	)
+	return err
+}
+
+const createOrganizationTeam = `-- name: CreateOrganizationTeam :one
+INSERT INTO teams (
+    id, name, description, organization_id, lead_user_id, created_at, updated_at
+) VALUES (
+    $1, $2, $3, $4, $5, (now() AT TIME ZONE 'UTC'), (now() AT TIME ZONE 'UTC')
+)
+RETURNING id, name, organization_id, created_at, updated_at, description, lead_user_id, archived_at
+`
+
+type CreateOrganizationTeamParams struct {
+	ID             string      `json:"id"`
+	Name           string      `json:"name"`
+	Description    pgtype.Text `json:"description"`
+	OrganizationID string      `json:"organizationId"`
+	LeadUserID     pgtype.Text `json:"leadUserId"`
+}
+
+func (q *Queries) CreateOrganizationTeam(ctx context.Context, arg CreateOrganizationTeamParams) (Team, error) {
+	row := q.db.QueryRow(ctx, createOrganizationTeam,
+		arg.ID,
+		arg.Name,
+		arg.Description,
+		arg.OrganizationID,
+		arg.LeadUserID,
+	)
+	var i Team
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.OrganizationID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Description,
+		&i.LeadUserID,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
 const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (
     id,
@@ -1490,12 +1650,12 @@ RETURNING id, expires_at, token, created_at, updated_at, ip_address, user_agent,
 `
 
 type CreateSessionParams struct {
-	ID        string
-	ExpiresAt pgtype.Timestamp
-	Token     string
-	IpAddress pgtype.Text
-	UserAgent pgtype.Text
-	UserID    string
+	ID        string           `json:"id"`
+	ExpiresAt pgtype.Timestamp `json:"expiresAt"`
+	Token     string           `json:"token"`
+	IpAddress pgtype.Text      `json:"ipAddress"`
+	UserAgent pgtype.Text      `json:"userAgent"`
+	UserID    string           `json:"userId"`
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
@@ -1540,10 +1700,10 @@ INSERT INTO two_factor_challenges (
 `
 
 type CreateTwoFactorChallengeParams struct {
-	ID        string
-	Token     string
-	UserID    string
-	ExpiresAt pgtype.Timestamp
+	ID        string           `json:"id"`
+	Token     string           `json:"token"`
+	UserID    string           `json:"userId"`
+	ExpiresAt pgtype.Timestamp `json:"expiresAt"`
 }
 
 func (q *Queries) CreateTwoFactorChallenge(ctx context.Context, arg CreateTwoFactorChallengeParams) error {
@@ -1570,9 +1730,9 @@ RETURNING id, name, email, email_verified, image, created_at, updated_at, role, 
 `
 
 type CreateUserParams struct {
-	ID    string
-	Name  string
-	Email string
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -1615,6 +1775,96 @@ func (q *Queries) DeleteEmailVerification(ctx context.Context, id string) error 
 	return err
 }
 
+const deleteOrganizationMember = `-- name: DeleteOrganizationMember :one
+DELETE FROM members
+WHERE organization_id = $1 AND user_id = $2
+RETURNING id, organization_id, user_id, role, created_at
+`
+
+type DeleteOrganizationMemberParams struct {
+	OrganizationID string `json:"organizationId"`
+	UserID         string `json:"userId"`
+}
+
+func (q *Queries) DeleteOrganizationMember(ctx context.Context, arg DeleteOrganizationMemberParams) (Member, error) {
+	row := q.db.QueryRow(ctx, deleteOrganizationMember, arg.OrganizationID, arg.UserID)
+	var i Member
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteOrganizationMemberTeams = `-- name: DeleteOrganizationMemberTeams :exec
+DELETE FROM team_members
+USING teams
+WHERE team_members.team_id = teams.id
+  AND teams.organization_id = $1
+  AND team_members.user_id = $2
+`
+
+type DeleteOrganizationMemberTeamsParams struct {
+	OrganizationID string `json:"organizationId"`
+	UserID         string `json:"userId"`
+}
+
+func (q *Queries) DeleteOrganizationMemberTeams(ctx context.Context, arg DeleteOrganizationMemberTeamsParams) error {
+	_, err := q.db.Exec(ctx, deleteOrganizationMemberTeams, arg.OrganizationID, arg.UserID)
+	return err
+}
+
+const deleteOrganizationTeam = `-- name: DeleteOrganizationTeam :one
+DELETE FROM teams WHERE id = $1 AND organization_id = $2
+RETURNING id, name, organization_id, created_at, updated_at, description, lead_user_id, archived_at
+`
+
+type DeleteOrganizationTeamParams struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) DeleteOrganizationTeam(ctx context.Context, arg DeleteOrganizationTeamParams) (Team, error) {
+	row := q.db.QueryRow(ctx, deleteOrganizationTeam, arg.ID, arg.OrganizationID)
+	var i Team
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.OrganizationID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Description,
+		&i.LeadUserID,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
+const deleteOrganizationTeamMember = `-- name: DeleteOrganizationTeamMember :execrows
+DELETE FROM team_members USING teams
+WHERE team_members.team_id = teams.id
+  AND teams.id = $1::text
+  AND teams.organization_id = $2::text
+  AND team_members.user_id = $3::text
+`
+
+type DeleteOrganizationTeamMemberParams struct {
+	TeamID         string `json:"teamId"`
+	OrganizationID string `json:"organizationId"`
+	UserID         string `json:"userId"`
+}
+
+func (q *Queries) DeleteOrganizationTeamMember(ctx context.Context, arg DeleteOrganizationTeamMemberParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOrganizationTeamMember, arg.TeamID, arg.OrganizationID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteOtherUserSessions = `-- name: DeleteOtherUserSessions :exec
 DELETE FROM sessions
 WHERE user_id = $1
@@ -1622,8 +1872,8 @@ WHERE user_id = $1
 `
 
 type DeleteOtherUserSessionsParams struct {
-	UserID string
-	Token  string
+	UserID string `json:"userId"`
+	Token  string `json:"token"`
 }
 
 func (q *Queries) DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error {
@@ -1680,8 +1930,8 @@ WHERE user_id = $1
 `
 
 type EnableTwoFactorParams struct {
-	UserID      string
-	BackupCodes string
+	UserID      string `json:"userId"`
+	BackupCodes string `json:"backupCodes"`
 }
 
 func (q *Queries) EnableTwoFactor(ctx context.Context, arg EnableTwoFactorParams) error {
@@ -1704,8 +1954,8 @@ FOR UPDATE
 `
 
 type GetActiveEmailVerificationRow struct {
-	ID     string
-	UserID string
+	ID     string `json:"id"`
+	UserID string `json:"userId"`
 }
 
 func (q *Queries) GetActiveEmailVerification(ctx context.Context, value string) (GetActiveEmailVerificationRow, error) {
@@ -1733,15 +1983,15 @@ FOR UPDATE
 `
 
 type GetActiveOrganizationInvitationParams struct {
-	Token string
-	Email string
+	Token string `json:"token"`
+	Email string `json:"email"`
 }
 
 type GetActiveOrganizationInvitationRow struct {
-	ID               string
-	OrganizationID   string
-	Role             pgtype.Text
-	OrganizationName string
+	ID               string      `json:"id"`
+	OrganizationID   string      `json:"organizationId"`
+	Role             pgtype.Text `json:"role"`
+	OrganizationName string      `json:"organizationName"`
 }
 
 func (q *Queries) GetActiveOrganizationInvitation(ctx context.Context, arg GetActiveOrganizationInvitationParams) (GetActiveOrganizationInvitationRow, error) {
@@ -1778,9 +2028,9 @@ FOR UPDATE
 `
 
 type GetActivePasswordResetRow struct {
-	ID       string
-	UserID   string
-	Password pgtype.Text
+	ID       string      `json:"id"`
+	UserID   string      `json:"userId"`
+	Password pgtype.Text `json:"password"`
 }
 
 func (q *Queries) GetActivePasswordReset(ctx context.Context, value string) (GetActivePasswordResetRow, error) {
@@ -1828,17 +2078,17 @@ LIMIT 1
 `
 
 type GetCredentialUserByEmailRow struct {
-	ID               string
-	Name             string
-	Email            string
-	EmailVerified    bool
-	Image            pgtype.Text
-	Role             string
-	Banned           pgtype.Bool
-	BanReason        pgtype.Text
-	BanExpires       pgtype.Timestamp
-	Password         pgtype.Text
-	TwoFactorEnabled bool
+	ID               string           `json:"id"`
+	Name             string           `json:"name"`
+	Email            string           `json:"email"`
+	EmailVerified    bool             `json:"emailVerified"`
+	Image            pgtype.Text      `json:"image"`
+	Role             string           `json:"role"`
+	Banned           pgtype.Bool      `json:"banned"`
+	BanReason        pgtype.Text      `json:"banReason"`
+	BanExpires       pgtype.Timestamp `json:"banExpires"`
+	Password         pgtype.Text      `json:"password"`
+	TwoFactorEnabled bool             `json:"twoFactorEnabled"`
 }
 
 func (q *Queries) GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error) {
@@ -1856,6 +2106,78 @@ func (q *Queries) GetCredentialUserByEmail(ctx context.Context, lower string) (G
 		&i.BanExpires,
 		&i.Password,
 		&i.TwoFactorEnabled,
+	)
+	return i, err
+}
+
+const getOrganizationMembership = `-- name: GetOrganizationMembership :one
+SELECT
+    organizations.id, organizations.name, organizations.slug,
+    organizations.logo, organizations.metadata, organizations.created_at,
+    organizations.updated_at, members.role,
+    members.created_at AS member_since
+FROM members
+JOIN organizations ON organizations.id = members.organization_id
+WHERE organizations.slug = $1 AND members.user_id = $2
+  AND organizations.deleted_at IS NULL
+`
+
+type GetOrganizationMembershipParams struct {
+	Slug   string `json:"slug"`
+	UserID string `json:"userId"`
+}
+
+type GetOrganizationMembershipRow struct {
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Slug        string           `json:"slug"`
+	Logo        pgtype.Text      `json:"logo"`
+	Metadata    pgtype.Text      `json:"metadata"`
+	CreatedAt   pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt   pgtype.Timestamp `json:"updatedAt"`
+	Role        string           `json:"role"`
+	MemberSince pgtype.Timestamp `json:"memberSince"`
+}
+
+func (q *Queries) GetOrganizationMembership(ctx context.Context, arg GetOrganizationMembershipParams) (GetOrganizationMembershipRow, error) {
+	row := q.db.QueryRow(ctx, getOrganizationMembership, arg.Slug, arg.UserID)
+	var i GetOrganizationMembershipRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Logo,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Role,
+		&i.MemberSince,
+	)
+	return i, err
+}
+
+const getOrganizationTeam = `-- name: GetOrganizationTeam :one
+SELECT id, name, organization_id, created_at, updated_at, description, lead_user_id, archived_at FROM teams
+WHERE id = $1 AND organization_id = $2
+`
+
+type GetOrganizationTeamParams struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) GetOrganizationTeam(ctx context.Context, arg GetOrganizationTeamParams) (Team, error) {
+	row := q.db.QueryRow(ctx, getOrganizationTeam, arg.ID, arg.OrganizationID)
+	var i Team
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.OrganizationID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Description,
+		&i.LeadUserID,
+		&i.ArchivedAt,
 	)
 	return i, err
 }
@@ -1879,9 +2201,9 @@ LIMIT 1
 `
 
 type GetPasswordResetUserByEmailRow struct {
-	ID    string
-	Name  string
-	Email string
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
 }
 
 func (q *Queries) GetPasswordResetUserByEmail(ctx context.Context, lower string) (GetPasswordResetUserByEmailRow, error) {
@@ -1938,22 +2260,22 @@ LIMIT 1
 `
 
 type GetSessionUserRow struct {
-	SessionID            string
-	ExpiresAt            pgtype.Timestamp
-	CreatedAt            pgtype.Timestamp
-	UpdatedAt            pgtype.Timestamp
-	IpAddress            pgtype.Text
-	UserAgent            pgtype.Text
-	UserID               string
-	ImpersonatedBy       pgtype.Text
-	ImpersonationReason  pgtype.Text
-	ActiveOrganizationID pgtype.Text
-	ActiveTeamID         pgtype.Text
-	UserName             string
-	UserEmail            string
-	UserEmailVerified    bool
-	UserImage            pgtype.Text
-	UserRole             string
+	SessionID            string           `json:"sessionId"`
+	ExpiresAt            pgtype.Timestamp `json:"expiresAt"`
+	CreatedAt            pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt            pgtype.Timestamp `json:"updatedAt"`
+	IpAddress            pgtype.Text      `json:"ipAddress"`
+	UserAgent            pgtype.Text      `json:"userAgent"`
+	UserID               string           `json:"userId"`
+	ImpersonatedBy       pgtype.Text      `json:"impersonatedBy"`
+	ImpersonationReason  pgtype.Text      `json:"impersonationReason"`
+	ActiveOrganizationID pgtype.Text      `json:"activeOrganizationId"`
+	ActiveTeamID         pgtype.Text      `json:"activeTeamId"`
+	UserName             string           `json:"userName"`
+	UserEmail            string           `json:"userEmail"`
+	UserEmailVerified    bool             `json:"userEmailVerified"`
+	UserImage            pgtype.Text      `json:"userImage"`
+	UserRole             string           `json:"userRole"`
 }
 
 func (q *Queries) GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error) {
@@ -2028,15 +2350,15 @@ LIMIT 1
 `
 
 type GetTwoFactorChallengeRow struct {
-	ChallengeID   string
-	UserID        string
-	Secret        string
-	BackupCodes   string
-	Name          string
-	Email         string
-	EmailVerified bool
-	Image         pgtype.Text
-	Role          string
+	ChallengeID   string      `json:"challengeId"`
+	UserID        string      `json:"userId"`
+	Secret        string      `json:"secret"`
+	BackupCodes   string      `json:"backupCodes"`
+	Name          string      `json:"name"`
+	Email         string      `json:"email"`
+	EmailVerified bool        `json:"emailVerified"`
+	Image         pgtype.Text `json:"image"`
+	Role          string      `json:"role"`
 }
 
 func (q *Queries) GetTwoFactorChallenge(ctx context.Context, token string) (GetTwoFactorChallengeRow, error) {
@@ -2075,8 +2397,8 @@ ORDER BY days.day
 `
 
 type GetUserSignInActivityRow struct {
-	Day     pgtype.Date
-	SignIns int32
+	Day     pgtype.Date `json:"day"`
+	SignIns int32       `json:"signIns"`
 }
 
 func (q *Queries) GetUserSignInActivity(ctx context.Context, userID string) ([]GetUserSignInActivityRow, error) {
@@ -2089,6 +2411,342 @@ func (q *Queries) GetUserSignInActivity(ctx context.Context, userID string) ([]G
 	for rows.Next() {
 		var i GetUserSignInActivityRow
 		if err := rows.Scan(&i.Day, &i.SignIns); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationAuditEvents = `-- name: ListOrganizationAuditEvents :many
+SELECT
+    auth_events.id, auth_events.event_type, auth_events.target_type,
+    auth_events.target_id, auth_events.reason, auth_events.before_state,
+    auth_events.after_state, auth_events.ip_address, auth_events.user_agent,
+    auth_events.created_at, users.id AS actor_id, users.name AS actor_name,
+    users.email AS actor_email
+FROM auth_events
+LEFT JOIN users ON users.id = auth_events.user_id
+WHERE auth_events.organization_id = $1
+ORDER BY auth_events.created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListOrganizationAuditEventsParams struct {
+	OrganizationID pgtype.Text `json:"organizationId"`
+	Limit          int32       `json:"limit"`
+	Offset         int32       `json:"offset"`
+}
+
+type ListOrganizationAuditEventsRow struct {
+	ID          string           `json:"id"`
+	EventType   string           `json:"eventType"`
+	TargetType  pgtype.Text      `json:"targetType"`
+	TargetID    pgtype.Text      `json:"targetId"`
+	Reason      pgtype.Text      `json:"reason"`
+	BeforeState []byte           `json:"beforeState"`
+	AfterState  []byte           `json:"afterState"`
+	IpAddress   pgtype.Text      `json:"ipAddress"`
+	UserAgent   pgtype.Text      `json:"userAgent"`
+	CreatedAt   pgtype.Timestamp `json:"createdAt"`
+	ActorID     pgtype.Text      `json:"actorId"`
+	ActorName   pgtype.Text      `json:"actorName"`
+	ActorEmail  pgtype.Text      `json:"actorEmail"`
+}
+
+func (q *Queries) ListOrganizationAuditEvents(ctx context.Context, arg ListOrganizationAuditEventsParams) ([]ListOrganizationAuditEventsRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationAuditEvents, arg.OrganizationID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrganizationAuditEventsRow
+	for rows.Next() {
+		var i ListOrganizationAuditEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventType,
+			&i.TargetType,
+			&i.TargetID,
+			&i.Reason,
+			&i.BeforeState,
+			&i.AfterState,
+			&i.IpAddress,
+			&i.UserAgent,
+			&i.CreatedAt,
+			&i.ActorID,
+			&i.ActorName,
+			&i.ActorEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationInvitations = `-- name: ListOrganizationInvitations :many
+SELECT id, email, role, status, expires_at, created_at, invited_user_id
+FROM invitations
+WHERE organization_id = $1
+ORDER BY created_at DESC
+`
+
+type ListOrganizationInvitationsRow struct {
+	ID            string           `json:"id"`
+	Email         string           `json:"email"`
+	Role          pgtype.Text      `json:"role"`
+	Status        string           `json:"status"`
+	ExpiresAt     pgtype.Timestamp `json:"expiresAt"`
+	CreatedAt     pgtype.Timestamp `json:"createdAt"`
+	InvitedUserID pgtype.Text      `json:"invitedUserId"`
+}
+
+func (q *Queries) ListOrganizationInvitations(ctx context.Context, organizationID string) ([]ListOrganizationInvitationsRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationInvitations, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrganizationInvitationsRow
+	for rows.Next() {
+		var i ListOrganizationInvitationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Role,
+			&i.Status,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.InvitedUserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationMembers = `-- name: ListOrganizationMembers :many
+SELECT
+    members.id, members.role, members.created_at,
+    users.id AS user_id, users.name, users.email, users.image,
+    users.email_verified
+FROM members
+JOIN users ON users.id = members.user_id
+WHERE members.organization_id = $1 AND users.deleted_at IS NULL
+ORDER BY
+    CASE members.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+    users.name
+`
+
+type ListOrganizationMembersRow struct {
+	ID            string           `json:"id"`
+	Role          string           `json:"role"`
+	CreatedAt     pgtype.Timestamp `json:"createdAt"`
+	UserID        string           `json:"userId"`
+	Name          string           `json:"name"`
+	Email         string           `json:"email"`
+	Image         pgtype.Text      `json:"image"`
+	EmailVerified bool             `json:"emailVerified"`
+}
+
+func (q *Queries) ListOrganizationMembers(ctx context.Context, organizationID string) ([]ListOrganizationMembersRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationMembers, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrganizationMembersRow
+	for rows.Next() {
+		var i ListOrganizationMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Role,
+			&i.CreatedAt,
+			&i.UserID,
+			&i.Name,
+			&i.Email,
+			&i.Image,
+			&i.EmailVerified,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationTeamMembers = `-- name: ListOrganizationTeamMembers :many
+SELECT
+    team_members.id, users.id AS user_id, users.name, users.email,
+    users.image, members.role AS organization_role, team_members.created_at
+FROM team_members
+JOIN users ON users.id = team_members.user_id
+JOIN members
+  ON members.user_id = users.id
+ AND members.organization_id = $1::text
+WHERE team_members.team_id = $2::text
+ORDER BY users.name
+`
+
+type ListOrganizationTeamMembersParams struct {
+	OrganizationID string `json:"organizationId"`
+	TeamID         string `json:"teamId"`
+}
+
+type ListOrganizationTeamMembersRow struct {
+	ID               string           `json:"id"`
+	UserID           string           `json:"userId"`
+	Name             string           `json:"name"`
+	Email            string           `json:"email"`
+	Image            pgtype.Text      `json:"image"`
+	OrganizationRole string           `json:"organizationRole"`
+	CreatedAt        pgtype.Timestamp `json:"createdAt"`
+}
+
+func (q *Queries) ListOrganizationTeamMembers(ctx context.Context, arg ListOrganizationTeamMembersParams) ([]ListOrganizationTeamMembersRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationTeamMembers, arg.OrganizationID, arg.TeamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrganizationTeamMembersRow
+	for rows.Next() {
+		var i ListOrganizationTeamMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Name,
+			&i.Email,
+			&i.Image,
+			&i.OrganizationRole,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOrganizationTeams = `-- name: ListOrganizationTeams :many
+SELECT
+    teams.id, teams.name, teams.description, teams.lead_user_id,
+    teams.created_at, teams.updated_at, teams.archived_at,
+    lead.name AS lead_name, count(team_members.id)::int AS member_count
+FROM teams
+LEFT JOIN users AS lead ON lead.id = teams.lead_user_id
+LEFT JOIN team_members ON team_members.team_id = teams.id
+WHERE teams.organization_id = $1
+  AND ($2::boolean OR teams.archived_at IS NULL)
+GROUP BY teams.id, lead.id
+ORDER BY teams.archived_at NULLS FIRST, teams.name
+`
+
+type ListOrganizationTeamsParams struct {
+	OrganizationID  string `json:"organizationId"`
+	IncludeArchived bool   `json:"includeArchived"`
+}
+
+type ListOrganizationTeamsRow struct {
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Description pgtype.Text      `json:"description"`
+	LeadUserID  pgtype.Text      `json:"leadUserId"`
+	CreatedAt   pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt   pgtype.Timestamp `json:"updatedAt"`
+	ArchivedAt  pgtype.Timestamp `json:"archivedAt"`
+	LeadName    pgtype.Text      `json:"leadName"`
+	MemberCount int32            `json:"memberCount"`
+}
+
+func (q *Queries) ListOrganizationTeams(ctx context.Context, arg ListOrganizationTeamsParams) ([]ListOrganizationTeamsRow, error) {
+	rows, err := q.db.Query(ctx, listOrganizationTeams, arg.OrganizationID, arg.IncludeArchived)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOrganizationTeamsRow
+	for rows.Next() {
+		var i ListOrganizationTeamsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.LeadUserID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ArchivedAt,
+			&i.LeadName,
+			&i.MemberCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserOrganizations = `-- name: ListUserOrganizations :many
+SELECT
+    organizations.id, organizations.name, organizations.slug,
+    organizations.logo, organizations.metadata, members.role,
+    organizations.created_at, organizations.updated_at
+FROM members
+JOIN organizations ON organizations.id = members.organization_id
+WHERE members.user_id = $1 AND organizations.deleted_at IS NULL
+ORDER BY organizations.name
+`
+
+type ListUserOrganizationsRow struct {
+	ID        string           `json:"id"`
+	Name      string           `json:"name"`
+	Slug      string           `json:"slug"`
+	Logo      pgtype.Text      `json:"logo"`
+	Metadata  pgtype.Text      `json:"metadata"`
+	Role      string           `json:"role"`
+	CreatedAt pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt pgtype.Timestamp `json:"updatedAt"`
+}
+
+func (q *Queries) ListUserOrganizations(ctx context.Context, userID string) ([]ListUserOrganizationsRow, error) {
+	rows, err := q.db.Query(ctx, listUserOrganizations, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUserOrganizationsRow
+	for rows.Next() {
+		var i ListUserOrganizationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.Logo,
+			&i.Metadata,
+			&i.Role,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -2119,22 +2777,22 @@ ORDER BY created_at DESC
 `
 
 type ListUserSessionsParams struct {
-	UserID string
-	Token  string
+	UserID string `json:"userId"`
+	Token  string `json:"token"`
 }
 
 type ListUserSessionsRow struct {
-	ID                   string
-	ExpiresAt            pgtype.Timestamp
-	CreatedAt            pgtype.Timestamp
-	UpdatedAt            pgtype.Timestamp
-	IpAddress            pgtype.Text
-	UserAgent            pgtype.Text
-	UserID               string
-	ImpersonatedBy       pgtype.Text
-	ActiveOrganizationID pgtype.Text
-	ActiveTeamID         pgtype.Text
-	IsCurrent            bool
+	ID                   string           `json:"id"`
+	ExpiresAt            pgtype.Timestamp `json:"expiresAt"`
+	CreatedAt            pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt            pgtype.Timestamp `json:"updatedAt"`
+	IpAddress            pgtype.Text      `json:"ipAddress"`
+	UserAgent            pgtype.Text      `json:"userAgent"`
+	UserID               string           `json:"userId"`
+	ImpersonatedBy       pgtype.Text      `json:"impersonatedBy"`
+	ActiveOrganizationID pgtype.Text      `json:"activeOrganizationId"`
+	ActiveTeamID         pgtype.Text      `json:"activeTeamId"`
+	IsCurrent            bool             `json:"isCurrent"`
 }
 
 func (q *Queries) ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error) {
@@ -2200,9 +2858,9 @@ RETURNING id
 `
 
 type RevokeUserSessionParams struct {
-	ID     string
-	UserID string
-	Token  string
+	ID     string `json:"id"`
+	UserID string `json:"userId"`
+	Token  string `json:"token"`
 }
 
 func (q *Queries) RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) (string, error) {
@@ -2210,6 +2868,76 @@ func (q *Queries) RevokeUserSession(ctx context.Context, arg RevokeUserSessionPa
 	var id string
 	err := row.Scan(&id)
 	return id, err
+}
+
+const setOrganizationTeamArchived = `-- name: SetOrganizationTeamArchived :one
+UPDATE teams
+SET archived_at = CASE
+    WHEN $3::boolean THEN (now() AT TIME ZONE 'UTC')
+    ELSE NULL
+END
+WHERE id = $1 AND organization_id = $2
+RETURNING id, name, organization_id, created_at, updated_at, description, lead_user_id, archived_at
+`
+
+type SetOrganizationTeamArchivedParams struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+	Archived       bool   `json:"archived"`
+}
+
+func (q *Queries) SetOrganizationTeamArchived(ctx context.Context, arg SetOrganizationTeamArchivedParams) (Team, error) {
+	row := q.db.QueryRow(ctx, setOrganizationTeamArchived, arg.ID, arg.OrganizationID, arg.Archived)
+	var i Team
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.OrganizationID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Description,
+		&i.LeadUserID,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
+const setSessionActiveOrganization = `-- name: SetSessionActiveOrganization :exec
+UPDATE sessions
+SET active_organization_id = $2, active_team_id = NULL
+WHERE id = $1 AND user_id = $3
+`
+
+type SetSessionActiveOrganizationParams struct {
+	ID                   string      `json:"id"`
+	ActiveOrganizationID pgtype.Text `json:"activeOrganizationId"`
+	UserID               string      `json:"userId"`
+}
+
+func (q *Queries) SetSessionActiveOrganization(ctx context.Context, arg SetSessionActiveOrganizationParams) error {
+	_, err := q.db.Exec(ctx, setSessionActiveOrganization, arg.ID, arg.ActiveOrganizationID, arg.UserID)
+	return err
+}
+
+const transferOrganizationOwnership = `-- name: TransferOrganizationOwnership :exec
+UPDATE members
+SET role = CASE
+    WHEN user_id = $1::text THEN 'owner'
+    WHEN role = 'owner' THEN 'admin'
+    ELSE role
+END
+WHERE organization_id = $2::text
+  AND (role = 'owner' OR user_id = $1::text)
+`
+
+type TransferOrganizationOwnershipParams struct {
+	NewOwnerID     string `json:"newOwnerId"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) TransferOrganizationOwnership(ctx context.Context, arg TransferOrganizationOwnershipParams) error {
+	_, err := q.db.Exec(ctx, transferOrganizationOwnership, arg.NewOwnerID, arg.OrganizationID)
+	return err
 }
 
 const updateCredentialPassword = `-- name: UpdateCredentialPassword :exec
@@ -2222,13 +2950,111 @@ WHERE user_id = $1
 `
 
 type UpdateCredentialPasswordParams struct {
-	UserID   string
-	Password pgtype.Text
+	UserID   string      `json:"userId"`
+	Password pgtype.Text `json:"password"`
 }
 
 func (q *Queries) UpdateCredentialPassword(ctx context.Context, arg UpdateCredentialPasswordParams) error {
 	_, err := q.db.Exec(ctx, updateCredentialPassword, arg.UserID, arg.Password)
 	return err
+}
+
+const updateOrganizationMemberRole = `-- name: UpdateOrganizationMemberRole :one
+UPDATE members SET role = $3
+WHERE organization_id = $1 AND user_id = $2
+RETURNING id, organization_id, user_id, role, created_at
+`
+
+type UpdateOrganizationMemberRoleParams struct {
+	OrganizationID string `json:"organizationId"`
+	UserID         string `json:"userId"`
+	Role           string `json:"role"`
+}
+
+func (q *Queries) UpdateOrganizationMemberRole(ctx context.Context, arg UpdateOrganizationMemberRoleParams) (Member, error) {
+	row := q.db.QueryRow(ctx, updateOrganizationMemberRole, arg.OrganizationID, arg.UserID, arg.Role)
+	var i Member
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const updateOrganizationTeam = `-- name: UpdateOrganizationTeam :one
+UPDATE teams SET name = $3, description = $4, lead_user_id = $5
+WHERE id = $1 AND organization_id = $2
+RETURNING id, name, organization_id, created_at, updated_at, description, lead_user_id, archived_at
+`
+
+type UpdateOrganizationTeamParams struct {
+	ID             string      `json:"id"`
+	OrganizationID string      `json:"organizationId"`
+	Name           string      `json:"name"`
+	Description    pgtype.Text `json:"description"`
+	LeadUserID     pgtype.Text `json:"leadUserId"`
+}
+
+func (q *Queries) UpdateOrganizationTeam(ctx context.Context, arg UpdateOrganizationTeamParams) (Team, error) {
+	row := q.db.QueryRow(ctx, updateOrganizationTeam,
+		arg.ID,
+		arg.OrganizationID,
+		arg.Name,
+		arg.Description,
+		arg.LeadUserID,
+	)
+	var i Team
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.OrganizationID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Description,
+		&i.LeadUserID,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
+const updateOrganizationWorkspace = `-- name: UpdateOrganizationWorkspace :one
+UPDATE organizations
+SET name = $2, slug = $3, logo = $4, metadata = $5
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, name, slug, logo, created_at, metadata, deleted_at, updated_at
+`
+
+type UpdateOrganizationWorkspaceParams struct {
+	ID       string      `json:"id"`
+	Name     string      `json:"name"`
+	Slug     string      `json:"slug"`
+	Logo     pgtype.Text `json:"logo"`
+	Metadata pgtype.Text `json:"metadata"`
+}
+
+func (q *Queries) UpdateOrganizationWorkspace(ctx context.Context, arg UpdateOrganizationWorkspaceParams) (Organization, error) {
+	row := q.db.QueryRow(ctx, updateOrganizationWorkspace,
+		arg.ID,
+		arg.Name,
+		arg.Slug,
+		arg.Logo,
+		arg.Metadata,
+	)
+	var i Organization
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Logo,
+		&i.CreatedAt,
+		&i.Metadata,
+		&i.DeletedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateTwoFactorBackupCodes = `-- name: UpdateTwoFactorBackupCodes :exec
@@ -2238,8 +3064,8 @@ WHERE user_id = $1
 `
 
 type UpdateTwoFactorBackupCodesParams struct {
-	UserID      string
-	BackupCodes string
+	UserID      string `json:"userId"`
+	BackupCodes string `json:"backupCodes"`
 }
 
 func (q *Queries) UpdateTwoFactorBackupCodes(ctx context.Context, arg UpdateTwoFactorBackupCodesParams) error {
@@ -2259,9 +3085,9 @@ RETURNING id, name, email, email_verified, image, created_at, updated_at, role, 
 `
 
 type UpdateUserProfileParams struct {
-	ID    string
-	Name  string
-	Image pgtype.Text
+	ID    string      `json:"id"`
+	Name  string      `json:"name"`
+	Image pgtype.Text `json:"image"`
 }
 
 func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error) {
@@ -2307,9 +3133,9 @@ RETURNING id, user_id, secret, backup_codes, enabled, created_at, updated_at
 `
 
 type UpsertPendingTwoFactorParams struct {
-	ID     string
-	UserID string
-	Secret string
+	ID     string `json:"id"`
+	UserID string `json:"userId"`
+	Secret string `json:"secret"`
 }
 
 func (q *Queries) UpsertPendingTwoFactor(ctx context.Context, arg UpsertPendingTwoFactorParams) (TwoFactor, error) {
