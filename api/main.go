@@ -61,6 +61,7 @@ func main() {
 	}
 	authHandler.Register(api.Group("/auth"))
 	authHandler.RegisterDashboard(api)
+	authHandler.RegisterAdmin(api.Group("/admin"))
 	api.Get("/health", func(c fiber.Ctx) error {
 		started := time.Now()
 		_, databaseError := queries.Ping(c.Context())

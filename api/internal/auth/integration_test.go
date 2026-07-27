@@ -62,6 +62,7 @@ func TestAuthFlowIntegration(t *testing.T) {
 	handler.ConfigureEmailVerification(emailSender, "https://example.com")
 	handler.Register(app.Group("/api/auth"))
 	handler.RegisterDashboard(app.Group("/api"))
+	handler.RegisterAdmin(app.Group("/api/admin"))
 
 	signupResponse := authRequest(t, app, http.MethodPost, "/api/auth/signup", map[string]string{
 		"name":     "Auth Smoke Test",
@@ -87,6 +88,23 @@ func TestAuthFlowIntegration(t *testing.T) {
 	if len(cookies) == 0 {
 		t.Fatal("signup did not set a session cookie")
 	}
+
+	nonAdminResponse := authRequest(
+		t,
+		app,
+		http.MethodGet,
+		"/api/admin/users",
+		nil,
+		cookies[0],
+	)
+	if nonAdminResponse.StatusCode != http.StatusForbidden {
+		t.Fatalf(
+			"non-admin platform access status = %d, want %d",
+			nonAdminResponse.StatusCode,
+			http.StatusForbidden,
+		)
+	}
+	nonAdminResponse.Body.Close()
 
 	sessionHTTPResponse := authRequest(
 		t,
@@ -649,6 +667,208 @@ func TestAuthFlowIntegration(t *testing.T) {
 	if !loginBody.TwoFactorRequired {
 		t.Fatal("new password did not authenticate the reset account")
 	}
+
+	adminCode, err := totp.GenerateCode(
+		twoFactorSetupBody.Secret,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		t.Fatalf("generate post-reset 2fa code: %v", err)
+	}
+	adminLoginResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/2fa/verify-login",
+		map[string]string{
+			"challengeToken": loginBody.ChallengeToken,
+			"code":           adminCode,
+		},
+		nil,
+	)
+	if adminLoginResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"post-reset 2fa status = %d, want %d",
+			adminLoginResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	adminCookies := adminLoginResponse.Cookies()
+	adminLoginResponse.Body.Close()
+	if len(adminCookies) == 0 {
+		t.Fatal("post-reset 2fa did not create a session")
+	}
+	if _, err := pool.Exec(
+		context.Background(),
+		"UPDATE users SET role = 'admin' WHERE id = $1",
+		signupBody.User.ID,
+	); err != nil {
+		t.Fatalf("promote integration user: %v", err)
+	}
+
+	managedEmail := fmt.Sprintf("managed-%s@example.com", suffix)
+	createManagedUserResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/admin/users",
+		map[string]any{
+			"name":          "Managed User",
+			"email":         managedEmail,
+			"image":         "",
+			"password":      "managed-horse-battery-staple",
+			"role":          "user",
+			"emailVerified": true,
+		},
+		adminCookies[0],
+	)
+	if createManagedUserResponse.StatusCode != http.StatusCreated {
+		t.Fatalf(
+			"admin create user status = %d, want %d",
+			createManagedUserResponse.StatusCode,
+			http.StatusCreated,
+		)
+	}
+	var managedUserBody struct {
+		User userResponse `json:"user"`
+	}
+	decodeResponse(t, createManagedUserResponse, &managedUserBody)
+
+	createOrganizationResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/admin/organizations",
+		map[string]any{
+			"name":     "Managed Organization",
+			"slug":     "managed-" + strings.ToLower(suffix),
+			"logo":     "",
+			"metadata": `{"plan":"test"}`,
+			"ownerId":  managedUserBody.User.ID,
+		},
+		adminCookies[0],
+	)
+	if createOrganizationResponse.StatusCode != http.StatusCreated {
+		t.Fatalf(
+			"admin create organization status = %d, want %d",
+			createOrganizationResponse.StatusCode,
+			http.StatusCreated,
+		)
+	}
+	var organizationBody struct {
+		Organization db.Organization `json:"organization"`
+	}
+	decodeResponse(t, createOrganizationResponse, &organizationBody)
+
+	impersonateResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/admin/users/"+managedUserBody.User.ID+"/impersonate",
+		nil,
+		adminCookies[0],
+	)
+	if impersonateResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"impersonate status = %d, want %d",
+			impersonateResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	impersonatedCookies := impersonateResponse.Cookies()
+	impersonateResponse.Body.Close()
+	if len(impersonatedCookies) == 0 {
+		t.Fatal("impersonation did not create a session")
+	}
+
+	impersonatedAdminResponse := authRequest(
+		t,
+		app,
+		http.MethodGet,
+		"/api/admin/users",
+		nil,
+		impersonatedCookies[0],
+	)
+	if impersonatedAdminResponse.StatusCode != http.StatusForbidden {
+		t.Fatalf(
+			"impersonated admin access status = %d, want %d",
+			impersonatedAdminResponse.StatusCode,
+			http.StatusForbidden,
+		)
+	}
+	impersonatedAdminResponse.Body.Close()
+
+	stopImpersonationResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/impersonation/stop",
+		nil,
+		impersonatedCookies[0],
+	)
+	if stopImpersonationResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"stop impersonation status = %d, want %d",
+			stopImpersonationResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	returnedAdminCookies := stopImpersonationResponse.Cookies()
+	stopImpersonationResponse.Body.Close()
+	if len(returnedAdminCookies) == 0 {
+		t.Fatal("stop impersonation did not restore an admin session")
+	}
+
+	ownedUserDeleteResponse := authRequest(
+		t,
+		app,
+		http.MethodDelete,
+		"/api/admin/users/"+managedUserBody.User.ID,
+		nil,
+		returnedAdminCookies[0],
+	)
+	if ownedUserDeleteResponse.StatusCode != http.StatusBadRequest {
+		t.Fatalf(
+			"organization owner deletion status = %d, want %d",
+			ownedUserDeleteResponse.StatusCode,
+			http.StatusBadRequest,
+		)
+	}
+	ownedUserDeleteResponse.Body.Close()
+
+	deleteOrganizationResponse := authRequest(
+		t,
+		app,
+		http.MethodDelete,
+		"/api/admin/organizations/"+organizationBody.Organization.ID,
+		nil,
+		returnedAdminCookies[0],
+	)
+	if deleteOrganizationResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"admin delete organization status = %d, want %d",
+			deleteOrganizationResponse.StatusCode,
+			http.StatusNoContent,
+		)
+	}
+	deleteOrganizationResponse.Body.Close()
+
+	deleteManagedUserResponse := authRequest(
+		t,
+		app,
+		http.MethodDelete,
+		"/api/admin/users/"+managedUserBody.User.ID,
+		nil,
+		returnedAdminCookies[0],
+	)
+	if deleteManagedUserResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"admin delete user status = %d, want %d",
+			deleteManagedUserResponse.StatusCode,
+			http.StatusNoContent,
+		)
+	}
+	deleteManagedUserResponse.Body.Close()
 }
 
 type verificationEmailRecorder struct {
@@ -684,7 +904,7 @@ func authRequest(
 	app *fiber.App,
 	method string,
 	path string,
-	body map[string]string,
+	body any,
 	cookie *http.Cookie,
 ) *http.Response {
 	t.Helper()

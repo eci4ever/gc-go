@@ -11,10 +11,26 @@ import (
 )
 
 type Querier interface {
+	AdminCountOwnedOrganizations(ctx context.Context, userID string) (int32, error)
+	AdminCountUsersByRole(ctx context.Context, role string) (int32, error)
+	AdminCreateOrganization(ctx context.Context, arg AdminCreateOrganizationParams) (Organization, error)
+	AdminCreateUser(ctx context.Context, arg AdminCreateUserParams) (User, error)
+	AdminDeleteOrganization(ctx context.Context, id string) (int64, error)
+	AdminDeleteUser(ctx context.Context, id string) (int64, error)
+	AdminDemoteOrganizationOwners(ctx context.Context, organizationID string) error
+	AdminGetOrganization(ctx context.Context, id string) (Organization, error)
+	AdminGetUser(ctx context.Context, id string) (User, error)
+	AdminListOrganizations(ctx context.Context) ([]AdminListOrganizationsRow, error)
+	AdminListUsers(ctx context.Context) ([]AdminListUsersRow, error)
+	AdminSetUserBan(ctx context.Context, arg AdminSetUserBanParams) (User, error)
+	AdminUpdateOrganization(ctx context.Context, arg AdminUpdateOrganizationParams) (Organization, error)
+	AdminUpdateUser(ctx context.Context, arg AdminUpdateUserParams) (User, error)
+	AdminUpsertOrganizationOwner(ctx context.Context, arg AdminUpsertOrganizationOwnerParams) error
 	CountActiveUserSessions(ctx context.Context, userID string) (int32, error)
 	CreateAuthEvent(ctx context.Context, arg CreateAuthEventParams) error
 	CreateCredentialAccount(ctx context.Context, arg CreateCredentialAccountParams) error
 	CreateEmailVerification(ctx context.Context, arg CreateEmailVerificationParams) error
+	CreateImpersonatedSession(ctx context.Context, arg CreateImpersonatedSessionParams) (Session, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateTwoFactorChallenge(ctx context.Context, arg CreateTwoFactorChallengeParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)

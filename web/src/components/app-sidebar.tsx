@@ -1,6 +1,11 @@
 import * as React from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
-import { LayoutDashboardIcon, UserRoundIcon } from 'lucide-react'
+import {
+  Building2Icon,
+  LayoutDashboardIcon,
+  UserRoundIcon,
+  UsersIcon,
+} from 'lucide-react'
 
 import type { AuthUser } from '@/lib/auth'
 import { NavUser } from '@/components/nav-user'
@@ -32,15 +37,30 @@ const navigation = [
   },
 ]
 
+const adminNavigation = [
+  {
+    title: 'Users',
+    to: '/admin/users' as const,
+    icon: UsersIcon,
+  },
+  {
+    title: 'Organizations',
+    to: '/admin/organizations' as const,
+    icon: Building2Icon,
+  },
+]
+
 export function AppSidebar({
   user,
   onLogout,
   loggingOut,
+  platformAdmin,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   user: AuthUser
   onLogout: () => void
   loggingOut: boolean
+  platformAdmin: boolean
 }) {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
@@ -85,6 +105,27 @@ export function AppSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        {platformAdmin ? (
+          <SidebarGroup className="group-data-[collapsible=icon]:px-3">
+            <SidebarGroupLabel>Platform Admin</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminNavigation.map((item) => (
+                  <SidebarMenuItem key={item.to}>
+                    <SidebarMenuButton
+                      isActive={pathname === item.to}
+                      tooltip={item.title}
+                      render={<Link to={item.to} />}
+                    >
+                      <item.icon />
+                      <span>{item.title}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : null}
       </SidebarContent>
       <SidebarFooter className="group-data-[collapsible=icon]:px-3">
         <NavUser

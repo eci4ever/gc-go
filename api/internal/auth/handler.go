@@ -134,6 +134,7 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Post("/email-verification/verify", h.verifyEmail)
 	router.Post("/forgot-password", h.forgotPassword)
 	router.Post("/reset-password", h.resetPassword)
+	router.Post("/impersonation/stop", h.stopImpersonation)
 }
 
 func (h *Handler) signup(c fiber.Ctx) error {
@@ -262,7 +263,7 @@ func (h *Handler) login(c fiber.Ctx) error {
 		) != nil {
 		return jsonError(c, fiber.StatusUnauthorized, "Invalid email or password")
 	}
-	if user.Banned.Valid && user.Banned.Bool {
+	if activeBan(user.Banned, user.BanExpires) {
 		return jsonError(c, fiber.StatusForbidden, "This account is unavailable")
 	}
 	if user.TwoFactorEnabled {
@@ -678,6 +679,12 @@ func textValue(value string) pgtype.Text {
 
 func timestampValue(value time.Time) pgtype.Timestamp {
 	return pgtype.Timestamp{Time: value, Valid: true}
+}
+
+func activeBan(banned pgtype.Bool, expiresAt pgtype.Timestamp) bool {
+	return banned.Valid &&
+		banned.Bool &&
+		(!expiresAt.Valid || expiresAt.Time.After(time.Now().UTC()))
 }
 
 func stringPointer(value pgtype.Text) *string {

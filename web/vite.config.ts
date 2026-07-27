@@ -39,6 +39,7 @@ export default defineConfig({
       reporter: ['text', 'html'],
       include: [
         'src/lib/auth.ts',
+        'src/lib/admin.ts',
         'src/lib/dashboard.ts',
         'src/components/auth-form.tsx',
       ],

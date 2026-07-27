@@ -10,6 +10,7 @@ import {
 
 import { AppSidebar } from '@/components/app-sidebar'
 import { ThemeSwitcher } from '@/components/theme-switcher'
+import { Button } from '@/components/ui/button'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -23,6 +24,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar'
 import { logout, sessionQueryOptions } from '@/lib/auth'
+import { stopImpersonation } from '@/lib/admin'
 
 export const Route = createFileRoute('/_protected')({
   beforeLoad: async ({ context }) => {
@@ -33,13 +35,13 @@ export const Route = createFileRoute('/_protected')({
     if (!session.user) {
       throw redirect({ to: '/login' })
     }
-    return { user: session.user }
+    return { user: session.user, session: session.session }
   },
   component: ProtectedLayout,
 })
 
 function ProtectedLayout() {
-  const { user } = Route.useRouteContext()
+  const { user, session } = Route.useRouteContext()
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   })
@@ -57,7 +59,22 @@ function ProtectedLayout() {
       await router.invalidate()
     },
   })
-  const pageTitle = pathname === '/account' ? 'Account' : 'Dashboard'
+  const stopImpersonationMutation = useMutation({
+    mutationFn: stopImpersonation,
+    onSuccess: async (result) => {
+      queryClient.setQueryData(sessionQueryOptions.queryKey, result)
+      await navigate({ to: '/admin/users' })
+      await router.invalidate()
+    },
+  })
+  const pageTitle =
+    pathname === '/account'
+      ? 'Account'
+      : pathname === '/admin/users'
+        ? 'Users'
+        : pathname === '/admin/organizations'
+          ? 'Organizations'
+          : 'Dashboard'
 
   return (
     <SidebarProvider>
@@ -65,8 +82,28 @@ function ProtectedLayout() {
         user={user}
         onLogout={() => logoutMutation.mutate()}
         loggingOut={logoutMutation.isPending}
+        platformAdmin={
+          user.role === 'admin' && !session?.impersonatedBy
+        }
       />
       <SidebarInset>
+        {session?.impersonatedBy ? (
+          <div className="flex items-center justify-between gap-4 border-b bg-muted px-4 py-2 text-xs">
+            <span>
+              You are impersonating <strong>{user.email}</strong>.
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={stopImpersonationMutation.isPending}
+              onClick={() => stopImpersonationMutation.mutate()}
+            >
+              {stopImpersonationMutation.isPending
+                ? 'Returning…'
+                : 'Stop impersonating'}
+            </Button>
+          </div>
+        ) : null}
         <header className="flex h-16 shrink-0 items-center justify-between gap-2 px-4 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
           <div className="flex items-center gap-2">
             <SidebarTrigger className="-ml-1" />
