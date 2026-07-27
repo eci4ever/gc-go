@@ -33,6 +33,34 @@ SQL schema definitions belong in `api/db/schema.sql`; queries belong in
 
 ## Production
 
+### Provisioning a new Debian server
+
+The repository includes a one-time Debian provisioning script which installs
+Go 1.26.0, Node.js 24.18.0, npm, Git, and Caddy from their official
+distributions. It supports Debian `amd64` and `arm64`.
+
+First create the `nmfairus` deployment user and clone this repository to
+`/home/nmfairus/gc-go`. Then run:
+
+```sh
+cd /home/nmfairus/gc-go
+sudo ./deploy/provision-debian.sh
+```
+
+Create `/home/nmfairus/gc-go/api/.env`, run the database migration, and deploy
+the current commit:
+
+```sh
+cd /home/nmfairus/gc-go/api
+go run ./cmd/migrate
+cd ..
+./deploy/deploy.sh "$(git rev-parse HEAD)"
+```
+
+The provisioning script installs the systemd unit and Caddyfile, enables both
+services, and grants the deployment user permission to restart only the
+`gc-go-api` service without a password.
+
 Build the web app and copy its output to the Caddy web root:
 
 ```sh
