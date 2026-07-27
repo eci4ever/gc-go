@@ -1,22 +1,17 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { RouterProvider, createRouter } from '@tanstack/react-router'
+import { QueryClientProvider } from '@tanstack/react-query'
+import { RouterProvider } from '@tanstack/react-router'
 import { ThemeProvider } from 'next-themes'
 
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
-import { routeTree } from './routeTree.gen'
+import { createAppRouter } from './router'
 import './styles.css'
 
-const queryClient = new QueryClient()
-const router = createRouter({
-  routeTree,
-  context: {
-    queryClient,
-  },
-})
+const router = createAppRouter()
+const { queryClient } = router.options.context
 
 declare module '@tanstack/react-router' {
   interface Register {
