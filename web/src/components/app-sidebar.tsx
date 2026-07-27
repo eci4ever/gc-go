@@ -19,6 +19,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -148,28 +149,34 @@ export function AppSidebar({
                 <ChevronsUpDownIcon className="ml-auto size-4" />
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-64" align="start" side="right">
-                <DropdownMenuLabel>Organizations</DropdownMenuLabel>
-                {organizations.data?.organizations.map((organization) => (
-                  <DropdownMenuItem
-                    key={organization.id}
-                    render={
-                      <Link
-                        to="/organizations/$organizationSlug"
-                        params={{ organizationSlug: organization.slug }}
-                        onClick={() => activate.mutate(organization.slug)}
-                      />
-                    }
-                  >
-                    <Building2Icon />
-                    <span className="min-w-0 flex-1 truncate">{organization.name}</span>
-                    <span className="text-xs capitalize text-muted-foreground">
-                      {organization.role}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-                {!organizations.data?.organizations.length && (
-                  <DropdownMenuItem disabled>No organizations</DropdownMenuItem>
-                )}
+                <DropdownMenuGroup>
+                  <DropdownMenuLabel>Organizations</DropdownMenuLabel>
+                  {organizations.data?.organizations.map((organization) => (
+                    <DropdownMenuItem
+                      key={organization.id}
+                      render={
+                        <Link
+                          to="/organizations/$organizationSlug"
+                          params={{ organizationSlug: organization.slug }}
+                          onClick={() => activate.mutate(organization.slug)}
+                        />
+                      }
+                    >
+                      <Building2Icon />
+                      <span className="min-w-0 flex-1 truncate">
+                        {organization.name}
+                      </span>
+                      <span className="text-xs capitalize text-muted-foreground">
+                        {organization.role}
+                      </span>
+                    </DropdownMenuItem>
+                  ))}
+                  {!organizations.data?.organizations.length && (
+                    <DropdownMenuItem disabled>
+                      No organizations
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem render={<Link to="/dashboard" />}>
                   Personal dashboard
