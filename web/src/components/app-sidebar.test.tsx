@@ -1,6 +1,5 @@
 import { http, HttpResponse } from 'msw'
-import { cleanup, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { cleanup, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { renderWithQuery } from '@/test/render'
@@ -43,27 +42,12 @@ const user = {
   role: 'user',
 }
 
-function renderSidebar(teams: Array<{ id: string; name: string }>, activeTeamId: string | null = null) {
+function renderSidebar() {
   server.use(
     http.get('/api/organizations', () =>
       HttpResponse.json({
         organizations: [{ id: 'org-1', name: 'Acme', slug: 'acme', role: 'member' }],
         activeOrganizationId: 'org-1',
-      }),
-    ),
-    http.get('/api/organizations/:slug/accessible-teams', () =>
-      HttpResponse.json({
-        teams: teams.map((team) => ({
-          ...team,
-          description: null,
-          leadUserId: null,
-          leadName: null,
-          memberCount: 1,
-          createdAt: '2026-07-27T00:00:00Z',
-          updatedAt: null,
-          archivedAt: null,
-        })),
-        activeTeamId,
       }),
     ),
   )
@@ -79,7 +63,7 @@ function renderSidebar(teams: Array<{ id: string; name: string }>, activeTeamId:
   )
 }
 
-describe('AppSidebar team context', () => {
+describe('AppSidebar organization navigation', () => {
   beforeEach(() => {
     cleanup()
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
@@ -90,81 +74,15 @@ describe('AppSidebar team context', () => {
     routerMocks.navigate.mockReset()
   })
 
-  it('handles a user with zero accessible teams', async () => {
-    renderSidebar([])
-    expect(await screen.findByText('No teams assigned')).toBeInTheDocument()
+  it('keeps one stable Teams management destination', async () => {
+    renderSidebar()
+    expect(await screen.findByText('Teams')).toBeInTheDocument()
   })
 
-  it('renders one accessible active team', async () => {
-    renderSidebar([{ id: 'team-1', name: 'Operations' }], 'team-1')
-    const team = await screen.findByText('Operations')
-    expect(team.closest('[data-active]')).not.toBeNull()
-  })
-
-  it('renders multiple accessible teams without archived or stale entries', async () => {
-    renderSidebar([
-      { id: 'team-1', name: 'Operations' },
-      { id: 'team-2', name: 'Support' },
-    ], 'missing-team')
-    expect(await screen.findByText('Operations')).toBeInTheDocument()
-    expect(screen.getByText('Support')).toBeInTheDocument()
-    expect(screen.getByText('Operations').closest('[data-active]')).toBeNull()
-    expect(screen.getByText('Support').closest('[data-active]')).toBeNull()
-  })
-
-  it('activates a selected team, navigates, and refreshes team context', async () => {
-    let activation = ''
-    let accessibleRequests = 0
-    server.use(
-      http.get('/api/organizations', () =>
-        HttpResponse.json({
-          organizations: [{ id: 'org-1', name: 'Acme', slug: 'acme', role: 'member' }],
-          activeOrganizationId: 'org-1',
-        }),
-      ),
-      http.get('/api/organizations/:slug/accessible-teams', () => {
-        accessibleRequests += 1
-        return HttpResponse.json({
-          teams: [{
-            id: 'team-1',
-            name: 'Operations',
-            description: null,
-            leadUserId: null,
-            leadName: null,
-            memberCount: 1,
-            createdAt: '2026-07-27T00:00:00Z',
-            updatedAt: null,
-            archivedAt: null,
-          }],
-          activeTeamId: accessibleRequests > 1 ? 'team-1' : null,
-        })
-      }),
-      http.post('/api/organizations/:slug/teams/:teamId/activate', ({ params }) => {
-        activation = String(params.teamId)
-        return HttpResponse.json({
-          activeOrganizationId: 'org-1',
-          activeTeamId: params.teamId,
-        })
-      }),
-    )
-    renderWithQuery(
-      <SidebarProvider>
-        <AppSidebar
-          user={user}
-          onLogout={() => undefined}
-          loggingOut={false}
-          platformAdmin={false}
-        />
-      </SidebarProvider>,
-    )
-    const browser = userEvent.setup()
-    await browser.click(await screen.findByText('Operations'))
-
-    await waitFor(() => expect(activation).toBe('team-1'))
-    expect(routerMocks.navigate).toHaveBeenCalledWith(
-      '/organizations/acme/teams/team-1',
-    )
-    await waitFor(() => expect(accessibleRequests).toBeGreaterThan(1))
-    expect(screen.getByText('Operations').closest('[data-active]')).not.toBeNull()
+  it('does not render individual teams in the sidebar', async () => {
+    renderSidebar()
+    expect(await screen.findByText('Acme')).toBeInTheDocument()
+    expect(screen.queryByText('Operations')).not.toBeInTheDocument()
+    expect(screen.queryByText('No teams assigned')).not.toBeInTheDocument()
   })
 })

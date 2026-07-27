@@ -1,21 +1,26 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createFileRoute,
+  Link,
   Outlet,
   redirect,
   useNavigate,
   useRouter,
   useRouterState,
 } from '@tanstack/react-router'
+import { toast } from 'sonner'
 
 import { AppSidebar } from '@/components/app-sidebar'
+import { TeamSwitcher } from '@/components/team-switcher'
 import { ThemeSwitcher } from '@/components/theme-switcher'
 import { Button } from '@/components/ui/button'
 import {
   Breadcrumb,
   BreadcrumbItem,
+  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
+  BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -25,6 +30,12 @@ import {
 } from '@/components/ui/sidebar'
 import { logout, sessionQueryOptions } from '@/lib/auth'
 import { stopImpersonation } from '@/lib/admin'
+import {
+  activateOrganizationTeam,
+  accessibleOrganizationTeamsQueryOptions,
+  organizationsQueryOptions,
+  type OrganizationTeam,
+} from '@/lib/organizations'
 
 export const Route = createFileRoute('/_protected')({
   beforeLoad: async ({ context }) => {
@@ -48,6 +59,21 @@ function ProtectedLayout() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const router = useRouter()
+  const organizations = useQuery(organizationsQueryOptions)
+  const organizationSlug =
+    pathname.match(/^\/organizations\/([^/]+)/)?.[1] ?? ''
+  const activeOrganization = organizations.data?.organizations.find(
+    (organization) => organization.slug === organizationSlug,
+  )
+  const teams = useQuery(
+    accessibleOrganizationTeamsQueryOptions(activeOrganization?.slug ?? ''),
+  )
+  const routeTeamId =
+    pathname.match(/^\/organizations\/[^/]+\/teams\/([^/]+)/)?.[1] ?? null
+  const activeTeamId = routeTeamId ?? teams.data?.activeTeamId ?? null
+  const activeTeam = teams.data?.teams.find(
+    (team) => team.id === activeTeamId,
+  )
   const logoutMutation = useMutation({
     mutationFn: logout,
     onSuccess: async () => {
@@ -66,6 +92,30 @@ function ProtectedLayout() {
       await navigate({ to: '/admin/users' })
       await router.invalidate()
     },
+  })
+  const activateTeamMutation = useMutation({
+    mutationFn: (team: OrganizationTeam) =>
+      activateOrganizationTeam(activeOrganization!.slug, team.id),
+    onSuccess: async (_, team) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: [
+            'organizations',
+            activeOrganization?.slug,
+            'accessible-teams',
+          ],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['auth', 'session'] }),
+      ])
+      await navigate({
+        to: '/organizations/$organizationSlug/teams/$teamId',
+        params: {
+          organizationSlug: activeOrganization!.slug,
+          teamId: team.id,
+        },
+      })
+    },
+    onError: (error) => toast.error(error.message),
   })
   const pageTitle =
     pathname === '/account'
@@ -130,15 +180,84 @@ function ProtectedLayout() {
               orientation="vertical"
               className="mr-2 data-vertical:h-4 data-vertical:self-auto"
             />
-            <Breadcrumb>
+            <Breadcrumb className="hidden sm:block">
               <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbPage>{pageTitle}</BreadcrumbPage>
-                </BreadcrumbItem>
+                {activeOrganization ? (
+                  <>
+                    <BreadcrumbItem>
+                      <BreadcrumbLink
+                        render={
+                          <Link
+                            to="/organizations/$organizationSlug"
+                            params={{
+                              organizationSlug: activeOrganization.slug,
+                            }}
+                          />
+                        }
+                      >
+                        {activeOrganization.name}
+                      </BreadcrumbLink>
+                    </BreadcrumbItem>
+                    <BreadcrumbSeparator />
+                    {routeTeamId ? (
+                      <>
+                        <BreadcrumbItem>
+                          <BreadcrumbLink
+                            render={
+                              <Link
+                                to="/organizations/$organizationSlug/teams"
+                                params={{
+                                  organizationSlug: activeOrganization.slug,
+                                }}
+                              />
+                            }
+                          >
+                            Teams
+                          </BreadcrumbLink>
+                        </BreadcrumbItem>
+                        <BreadcrumbSeparator />
+                        <BreadcrumbItem>
+                          <BreadcrumbPage>
+                            {activeTeam?.name ?? 'Team'}
+                          </BreadcrumbPage>
+                        </BreadcrumbItem>
+                      </>
+                    ) : (
+                      <BreadcrumbItem>
+                        <BreadcrumbPage>
+                          {pageTitle.replace(/^Organization /, '')}
+                        </BreadcrumbPage>
+                      </BreadcrumbItem>
+                    )}
+                  </>
+                ) : (
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>{pageTitle}</BreadcrumbPage>
+                  </BreadcrumbItem>
+                )}
               </BreadcrumbList>
             </Breadcrumb>
           </div>
-          <ThemeSwitcher />
+          <div className="flex items-center gap-2">
+            {activeOrganization && (
+              <TeamSwitcher
+                teams={teams.data?.teams ?? []}
+                activeTeamId={activeTeamId}
+                loading={teams.isPending}
+                switching={activateTeamMutation.isPending}
+                onSelect={(team) => activateTeamMutation.mutate(team)}
+                onViewAll={() =>
+                  navigate({
+                    to: '/organizations/$organizationSlug/teams',
+                    params: {
+                      organizationSlug: activeOrganization.slug,
+                    },
+                  })
+                }
+              />
+            )}
+            <ThemeSwitcher />
+          </div>
         </header>
         <Outlet />
       </SidebarInset>
