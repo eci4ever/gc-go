@@ -46,7 +46,8 @@ func TestAuthFlowIntegration(t *testing.T) {
 	}
 	email := fmt.Sprintf("auth-smoke-%s@example.com", suffix)
 	managedEmail := fmt.Sprintf("managed-%s@example.com", suffix)
-	managedSlug := "managed-" + strings.ReplaceAll(strings.ToLower(suffix), "_", "-")
+	managedName := "Managed Organization " + suffix
+	managedSlug := ""
 	t.Cleanup(func() {
 		if _, err := pool.Exec(
 			context.Background(),
@@ -750,8 +751,7 @@ func TestAuthFlowIntegration(t *testing.T) {
 		http.MethodPost,
 		"/api/admin/organizations",
 		map[string]any{
-			"name":     "Managed Organization",
-			"slug":     managedSlug,
+			"name":     managedName,
 			"logo":     "",
 			"metadata": `{"plan":"test"}`,
 			"ownerId":  signupBody.User.ID,
@@ -769,6 +769,10 @@ func TestAuthFlowIntegration(t *testing.T) {
 		Organization db.Organization `json:"organization"`
 	}
 	decodeResponse(t, createOrganizationResponse, &organizationBody)
+	managedSlug = organizationBody.Organization.Slug
+	if !organizationSlugPattern.MatchString(managedSlug) {
+		t.Fatalf("generated organization slug %q is invalid", managedSlug)
+	}
 
 	paginatedUsersResponse := authRequest(
 		t,

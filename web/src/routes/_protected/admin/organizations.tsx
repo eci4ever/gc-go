@@ -384,20 +384,28 @@ function OrganizationEditorDialog({
                 required
               />
             </Field>
-            <Field>
-              <FieldLabel htmlFor="organization-slug">Slug</FieldLabel>
-              <Input
-                id="organization-slug"
-                name="slug"
-                defaultValue={target !== 'new' ? target?.slug : ''}
-                pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
-                placeholder="acme-company"
-                required
-              />
-              <FieldDescription>
-                Lowercase letters, numbers, and hyphens only.
-              </FieldDescription>
-            </Field>
+            {target === 'new' ? (
+              <Field>
+                <FieldLabel>Slug</FieldLabel>
+                <FieldDescription>
+                  Generated automatically from the organization name.
+                </FieldDescription>
+              </Field>
+            ) : (
+              <Field>
+                <FieldLabel htmlFor="organization-slug">Slug</FieldLabel>
+                <Input
+                  id="organization-slug"
+                  name="slug"
+                  defaultValue={target?.slug}
+                  pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
+                  required
+                />
+                <FieldDescription>
+                  Changing this also changes the organization URL.
+                </FieldDescription>
+              </Field>
+            )}
             <Field>
               <FieldLabel htmlFor="organization-logo">Logo URL</FieldLabel>
               <Input

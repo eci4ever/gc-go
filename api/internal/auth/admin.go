@@ -1,8 +1,10 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -16,6 +18,7 @@ import (
 )
 
 var organizationSlugPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
+var organizationSlugSeparatorPattern = regexp.MustCompile(`[^a-z0-9]+`)
 
 type adminUserRequest struct {
 	Name          string `json:"name"`
@@ -561,8 +564,15 @@ func (h *Handler) adminCreateOrganization(c fiber.Ctx) error {
 	if err := c.Bind().Body(&request); err != nil {
 		return jsonError(c, fiber.StatusBadRequest, "Invalid request body")
 	}
-	if message := validateAdminOrganizationRequest(&request); message != "" {
+	if message := validateAdminOrganizationRequest(&request, false); message != "" {
 		return jsonError(c, fiber.StatusBadRequest, message)
+	}
+	if request.Slug == "" {
+		slug, err := h.availableOrganizationSlug(c.Context(), request.Name)
+		if err != nil {
+			return jsonError(c, fiber.StatusInternalServerError, "Unable to create organization")
+		}
+		request.Slug = slug
 	}
 	owner, err := h.queries.AdminGetUser(c.Context(), request.OwnerID)
 	if err != nil || owner.DeletedAt.Valid ||
@@ -627,7 +637,7 @@ func (h *Handler) adminUpdateOrganization(c fiber.Ctx) error {
 	if err := c.Bind().Body(&request); err != nil {
 		return jsonError(c, fiber.StatusBadRequest, "Invalid request body")
 	}
-	if message := validateAdminOrganizationRequest(&request); message != "" {
+	if message := validateAdminOrganizationRequest(&request, true); message != "" {
 		return jsonError(c, fiber.StatusBadRequest, message)
 	}
 	owner, err := h.queries.AdminGetUser(c.Context(), request.OwnerID)
@@ -804,7 +814,10 @@ func validateAdminUserRequest(request *adminUserRequest, requirePassword bool) s
 	return ""
 }
 
-func validateAdminOrganizationRequest(request *adminOrganizationRequest) string {
+func validateAdminOrganizationRequest(
+	request *adminOrganizationRequest,
+	requireSlug bool,
+) string {
 	request.Name = strings.TrimSpace(request.Name)
 	request.Slug = strings.ToLower(strings.TrimSpace(request.Slug))
 	request.Logo = strings.TrimSpace(request.Logo)
@@ -813,7 +826,10 @@ func validateAdminOrganizationRequest(request *adminOrganizationRequest) string 
 	if request.Name == "" || len(request.Name) > 100 {
 		return "Organization name must be between 1 and 100 characters"
 	}
-	if !organizationSlugPattern.MatchString(request.Slug) {
+	if requireSlug && request.Slug == "" {
+		return "Organization slug is required"
+	}
+	if request.Slug != "" && !organizationSlugPattern.MatchString(request.Slug) {
 		return "Slug may contain lowercase letters, numbers, and hyphens"
 	}
 	if request.Logo != "" && !validImageURL(request.Logo) {
@@ -826,6 +842,49 @@ func validateAdminOrganizationRequest(request *adminOrganizationRequest) string 
 		return "Organization owner is required"
 	}
 	return ""
+}
+
+func organizationSlug(name string) string {
+	slug := organizationSlugSeparatorPattern.ReplaceAllString(
+		strings.ToLower(strings.TrimSpace(name)),
+		"-",
+	)
+	slug = strings.Trim(slug, "-")
+	if slug == "" {
+		return "organization"
+	}
+	return slug
+}
+
+func (h *Handler) availableOrganizationSlug(
+	ctx context.Context,
+	name string,
+) (string, error) {
+	base := organizationSlug(name)
+	for sequence := 1; sequence <= 10_000; sequence++ {
+		candidate := base
+		if sequence > 1 {
+			candidate = fmt.Sprintf("%s-%d", base, sequence)
+		}
+
+		var exists bool
+		if err := h.pool.QueryRow(
+			ctx,
+			`SELECT EXISTS (
+				SELECT 1
+				FROM organizations
+				WHERE lower(slug) = lower($1)
+				  AND deleted_at IS NULL
+			)`,
+			candidate,
+		).Scan(&exists); err != nil {
+			return "", err
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
+	return "", errors.New("unable to allocate organization slug")
 }
 
 func adminUserFromRow(user db.AdminListUsersRow) adminUserResponse {

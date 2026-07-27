@@ -46,7 +46,7 @@ describe('platform admin API client', () => {
 
     await createAdminOrganization({
       name: 'Acme',
-      slug: 'acme',
+      slug: '',
       logo: '',
       metadata: '{"plan":"pro"}',
       ownerId: 'user-1',
@@ -60,7 +60,7 @@ describe('platform admin API client', () => {
     expect(requests).toEqual([
       {
         name: 'Acme',
-        slug: 'acme',
+        slug: '',
         logo: '',
         metadata: '{"plan":"pro"}',
         ownerId: 'user-1',
