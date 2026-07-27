@@ -126,7 +126,7 @@ function About() {
             className="shrink-0"
           >
             <ArrowLeft data-icon="inline-start" />
-            Back to overview
+            Back to home
           </Button>
         </CardContent>
       </Card>

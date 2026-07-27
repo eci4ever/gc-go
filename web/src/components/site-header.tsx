@@ -29,7 +29,7 @@ export function SiteHeader() {
               activeProps={{ className: 'bg-muted text-foreground shadow-xs' }}
               className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
             >
-              Overview
+              Home
             </Link>
             <Link
               to="/about"

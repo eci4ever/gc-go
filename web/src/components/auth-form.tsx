@@ -298,7 +298,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           render={<Link to="/" />}
         >
           <ArrowLeft data-icon="inline-start" />
-          Back to overview
+          Back to home
         </Button>
       </div>
     </main>
