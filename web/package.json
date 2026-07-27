@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --config vite.config.ts",
     "generate:routes": "tsr generate",
-    "build": "npm run generate:routes && tsc -b && vite build",
+    "build": "npm run generate:routes && tsc -b && vite build --config vite.config.ts",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",

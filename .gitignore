@@ -8,5 +8,6 @@ bin/
 *.tsbuildinfo
 web/vite.config.js
 web/vite.config.d.ts
+web/.vite-config/
 *.log
 .DS_Store

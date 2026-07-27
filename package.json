@@ -5,9 +5,11 @@
     "web"
   ],
   "scripts": {
-    "dev": "concurrently -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev": "docker compose up -d --wait postgres && npm run dev:migrate && concurrently -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "cd api && go run .",
     "dev:web": "npm --workspace web run dev",
+    "dev:migrate": "cd api && go run ./cmd/migrate",
+    "dev:down": "docker compose stop postgres",
     "build": "npm --workspace web run build"
   },
   "devDependencies": {

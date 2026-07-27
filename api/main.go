@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
+	if err := godotenv.Load("../.env", ".env"); err != nil && !os.IsNotExist(err) {
 		log.Fatalf("load environment: %v", err)
 	}
 

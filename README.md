@@ -25,8 +25,9 @@ With OrbStack, open:
 http://gc-go-web.orb.local
 ```
 
-The published fallback address is `http://localhost`. PostgreSQL is not
-published to the host. Open a SQL shell with:
+The published fallback address is `http://localhost`. PostgreSQL is bound to
+`127.0.0.1:5432` for local development and is not exposed externally. Open a
+SQL shell with:
 
 ```sh
 docker compose exec postgres \
@@ -46,20 +47,21 @@ docker compose down -v # also deletes the PostgreSQL data volume
 The root `.env` is used only at runtime and must not be committed. Docker build
 contexts exclude all real environment files.
 
-## Native development
+## Development
+
+Run the development environment with one command:
 
 ```sh
-npm install
-cd api && go mod download && cd ..
 npm run dev
 ```
 
-- API: `http://localhost:3000`
-- Web: `http://localhost:5173`
-- Browser API calls use `/api` and are proxied by Vite.
+This starts PostgreSQL in Docker, waits for it to become healthy, applies
+migrations, then runs the Go API and Vite natively. Open
+`http://localhost:5173`. Stop the app with `Ctrl+C`; stop PostgreSQL separately
+with `npm run dev:down`.
 
-The API loads `api/.env` during local development. Copy `api/.env.example` to
-`api/.env` and set `DATABASE_URL` to your PostgreSQL connection URL.
+All development and Docker variables live in the root `.env`. Copy
+`.env.example` when setting up a new checkout.
 
 ## Database
 
