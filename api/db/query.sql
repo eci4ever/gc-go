@@ -1,6 +1,50 @@
 -- name: Ping :one
 SELECT 1::integer AS value;
 
+-- name: CreateNotification :one
+INSERT INTO notifications (
+    id,
+    user_id,
+    type,
+    title,
+    body,
+    href
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6
+)
+RETURNING *;
+
+-- name: ListUserNotifications :many
+SELECT *
+FROM notifications
+WHERE user_id = $1
+ORDER BY created_at DESC
+LIMIT $2;
+
+-- name: CountUnreadUserNotifications :one
+SELECT count(*)::integer
+FROM notifications
+WHERE user_id = $1
+  AND read_at IS NULL;
+
+-- name: MarkUserNotificationRead :one
+UPDATE notifications
+SET read_at = coalesce(read_at, (now() AT TIME ZONE 'UTC'))
+WHERE id = $1
+  AND user_id = $2
+RETURNING *;
+
+-- name: MarkAllUserNotificationsRead :execrows
+UPDATE notifications
+SET read_at = (now() AT TIME ZONE 'UTC')
+WHERE user_id = $1
+  AND read_at IS NULL;
+
 -- name: CreateUser :one
 INSERT INTO users (
     id,

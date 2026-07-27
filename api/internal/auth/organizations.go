@@ -240,6 +240,12 @@ func (h *Handler) updateOrganizationWorkspaceMember(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to update member")
 	}
 	h.recordOrganizationAudit(c, access, "organization_member_role_updated", "user", c.Params("userId"), "", target, updated)
+	h.createNotification(
+		c.Context(), h.queries, c.Params("userId"), "organization",
+		"Organization role updated",
+		fmt.Sprintf("Your role in %s is now %s.", access.Org.Name, request.Role),
+		fmt.Sprintf("/organizations/%s", access.Org.Slug),
+	)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -280,6 +286,12 @@ func (h *Handler) deleteOrganizationWorkspaceMember(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to remove member")
 	}
 	h.recordOrganizationAudit(c, access, "organization_member_removed", "user", c.Params("userId"), "", removed, nil)
+	h.createNotification(
+		c.Context(), h.queries, c.Params("userId"), "organization",
+		"Removed from organization",
+		fmt.Sprintf("You are no longer a member of %s.", access.Org.Name),
+		"/dashboard",
+	)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -365,6 +377,14 @@ func (h *Handler) inviteOrganizationWorkspaceMember(c fiber.Ctx) error {
 		"id": invitation.ID, "email": invitation.Email, "role": invitation.Role,
 		"teamId": invitation.TeamID,
 	})
+	if invitedUserID.Valid {
+		h.createNotification(
+			c.Context(), h.queries, invitedUserID.String, "invitation",
+			"Organization invitation",
+			fmt.Sprintf("You were invited to join %s as %s. Check your email to accept.", access.Org.Name, request.Role),
+			"/dashboard",
+		)
+	}
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"invitation": invitation})
 }
 
@@ -612,6 +632,12 @@ func (h *Handler) addOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusBadRequest, "User must be an organization member")
 	}
 	h.recordOrganizationAudit(c, access, "organization_team_member_added", "team", c.Params("teamId"), "", nil, request)
+	h.createNotification(
+		c.Context(), h.queries, request.UserID, "team",
+		"Added to team",
+		fmt.Sprintf("You were added to %s in %s.", team.Name, access.Org.Name),
+		fmt.Sprintf("/organizations/%s/teams/%s", access.Org.Slug, team.ID),
+	)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -650,6 +676,12 @@ func (h *Handler) deleteOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to remove team member")
 	}
 	h.recordOrganizationAudit(c, access, "organization_team_member_removed", "team", c.Params("teamId"), "", fiber.Map{"userId": c.Params("userId")}, nil)
+	h.createNotification(
+		c.Context(), h.queries, c.Params("userId"), "team",
+		"Removed from team",
+		fmt.Sprintf("You were removed from %s in %s.", team.Name, access.Org.Name),
+		fmt.Sprintf("/organizations/%s/teams", access.Org.Slug),
+	)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
@@ -785,6 +817,18 @@ func (h *Handler) transferOrganizationWorkspaceOwnership(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to transfer ownership")
 	}
 	h.recordOrganizationAudit(c, access, "organization_ownership_transferred", "user", request.UserID, request.Reason, target, fiber.Map{"role": "owner"})
+	h.createNotification(
+		c.Context(), h.queries, request.UserID, "organization",
+		"Organization ownership transferred",
+		fmt.Sprintf("You are now the owner of %s.", access.Org.Name),
+		fmt.Sprintf("/organizations/%s", access.Org.Slug),
+	)
+	h.createNotification(
+		c.Context(), h.queries, access.Current.UserID, "organization",
+		"Organization ownership transferred",
+		fmt.Sprintf("You transferred ownership of %s.", access.Org.Name),
+		fmt.Sprintf("/organizations/%s", access.Org.Slug),
+	)
 	return c.SendStatus(fiber.StatusNoContent)
 }
 

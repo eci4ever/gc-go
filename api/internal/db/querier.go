@@ -54,10 +54,12 @@ type Querier interface {
 	CountOrganizationAuditEvents(ctx context.Context, organizationID pgtype.Text) (int64, error)
 	CountOrganizationOwners(ctx context.Context, organizationID string) (int32, error)
 	CountTeamAuditEvents(ctx context.Context, arg CountTeamAuditEventsParams) (int64, error)
+	CountUnreadUserNotifications(ctx context.Context, userID string) (int32, error)
 	CreateAuthEvent(ctx context.Context, arg CreateAuthEventParams) error
 	CreateCredentialAccount(ctx context.Context, arg CreateCredentialAccountParams) error
 	CreateEmailVerification(ctx context.Context, arg CreateEmailVerificationParams) error
 	CreateImpersonatedSession(ctx context.Context, arg CreateImpersonatedSessionParams) (Session, error)
+	CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error)
 	CreateOrganizationAuditEvent(ctx context.Context, arg CreateOrganizationAuditEventParams) error
 	CreateOrganizationTeam(ctx context.Context, arg CreateOrganizationTeamParams) (Team, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
@@ -96,10 +98,13 @@ type Querier interface {
 	ListOrganizationTeamMembers(ctx context.Context, arg ListOrganizationTeamMembersParams) ([]ListOrganizationTeamMembersRow, error)
 	ListOrganizationTeams(ctx context.Context, arg ListOrganizationTeamsParams) ([]ListOrganizationTeamsRow, error)
 	ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]ListTeamAuditEventsRow, error)
+	ListUserNotifications(ctx context.Context, arg ListUserNotificationsParams) ([]Notification, error)
 	ListUserOrganizations(ctx context.Context, userID string) ([]ListUserOrganizationsRow, error)
 	ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error)
 	LockOrganizationForInvitation(ctx context.Context, id string) (string, error)
+	MarkAllUserNotificationsRead(ctx context.Context, userID string) (int64, error)
 	MarkUserEmailVerified(ctx context.Context, id string) error
+	MarkUserNotificationRead(ctx context.Context, arg MarkUserNotificationReadParams) (Notification, error)
 	Ping(ctx context.Context) (int32, error)
 	RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) (string, error)
 	SetOrganizationTeamArchived(ctx context.Context, arg SetOrganizationTeamArchivedParams) (Team, error)

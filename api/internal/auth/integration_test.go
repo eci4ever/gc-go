@@ -465,6 +465,81 @@ func TestAuthFlowIntegration(t *testing.T) {
 		)
 	}
 
+	notificationsResponse := authRequest(
+		t,
+		app,
+		http.MethodGet,
+		"/api/auth/notifications",
+		nil,
+		cookies[0],
+	)
+	if notificationsResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"notifications status = %d, want %d",
+			notificationsResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	var notificationsBody struct {
+		Notifications []struct {
+			ID    string `json:"id"`
+			Title string `json:"title"`
+		} `json:"notifications"`
+		UnreadCount int32 `json:"unreadCount"`
+	}
+	decodeResponse(t, notificationsResponse, &notificationsBody)
+	if len(notificationsBody.Notifications) != 3 ||
+		notificationsBody.UnreadCount != 3 {
+		t.Fatalf(
+			"notifications = %d unread = %d, want 3 and 3",
+			len(notificationsBody.Notifications),
+			notificationsBody.UnreadCount,
+		)
+	}
+
+	readNotificationResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/notifications/"+notificationsBody.Notifications[0].ID+"/read",
+		nil,
+		cookies[0],
+	)
+	if readNotificationResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"mark notification read status = %d, want %d",
+			readNotificationResponse.StatusCode,
+			http.StatusNoContent,
+		)
+	}
+	readNotificationResponse.Body.Close()
+
+	markAllNotificationsResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/notifications/read-all",
+		nil,
+		cookies[0],
+	)
+	if markAllNotificationsResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"mark all notifications status = %d, want %d",
+			markAllNotificationsResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	var markAllNotificationsBody struct {
+		Updated int64 `json:"updated"`
+	}
+	decodeResponse(t, markAllNotificationsResponse, &markAllNotificationsBody)
+	if markAllNotificationsBody.Updated != 2 {
+		t.Fatalf(
+			"marked notifications = %d, want 2",
+			markAllNotificationsBody.Updated,
+		)
+	}
+
 	logoutResponse := authRequest(
 		t,
 		app,

@@ -143,6 +143,9 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Post("/reset-password", h.resetPassword)
 	router.Post("/impersonation/stop", h.stopImpersonation)
 	router.Post("/invitations/accept", h.acceptOrganizationInvitation)
+	router.Get("/notifications", h.listNotifications)
+	router.Post("/notifications/read-all", h.markAllNotificationsRead)
+	router.Post("/notifications/:id/read", h.markNotificationRead)
 }
 
 func (h *Handler) signup(c fiber.Ctx) error {
@@ -581,6 +584,36 @@ func (h *Handler) recordAuthEvent(c fiber.Ctx, userID, eventType string) {
 		IpAddress: textValue(c.IP()),
 		UserAgent: textValue(c.Get("User-Agent")),
 	})
+	switch eventType {
+	case "password_changed":
+		h.createNotification(
+			c.Context(), h.queries, userID, "security",
+			"Password changed",
+			"Your account password was changed.",
+			"/account",
+		)
+	case "two_factor_enabled":
+		h.createNotification(
+			c.Context(), h.queries, userID, "security",
+			"Two-factor authentication enabled",
+			"Two-factor authentication is now protecting your account.",
+			"/account",
+		)
+	case "two_factor_disabled":
+		h.createNotification(
+			c.Context(), h.queries, userID, "security",
+			"Two-factor authentication disabled",
+			"Two-factor authentication was removed from your account.",
+			"/account",
+		)
+	case "email_verified":
+		h.createNotification(
+			c.Context(), h.queries, userID, "account",
+			"Email verified",
+			"Your email address has been verified successfully.",
+			"/account",
+		)
+	}
 }
 
 func (h *Handler) currentSession(c fiber.Ctx) (db.GetSessionUserRow, bool, error) {

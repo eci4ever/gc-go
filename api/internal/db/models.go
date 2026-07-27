@@ -62,6 +62,17 @@ type Member struct {
 	CreatedAt      pgtype.Timestamp `json:"createdAt"`
 }
 
+type Notification struct {
+	ID        string           `json:"id"`
+	UserID    string           `json:"userId"`
+	Type      string           `json:"type"`
+	Title     string           `json:"title"`
+	Body      string           `json:"body"`
+	Href      pgtype.Text      `json:"href"`
+	ReadAt    pgtype.Timestamp `json:"readAt"`
+	CreatedAt pgtype.Timestamp `json:"createdAt"`
+}
+
 type Organization struct {
 	ID        string           `json:"id"`
 	Name      string           `json:"name"`

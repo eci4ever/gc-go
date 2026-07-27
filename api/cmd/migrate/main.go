@@ -144,7 +144,8 @@ func resetDatabase(ctx context.Context, connection *pgx.Conn) {
 	defer transaction.Rollback(ctx)
 
 	_, err = transaction.Exec(ctx, `
-		DROP TABLE IF EXISTS
+	DROP TABLE IF EXISTS
+			notifications,
 			auth_events,
 			invitations,
 			team_members,

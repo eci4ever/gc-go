@@ -1531,6 +1531,20 @@ func (q *Queries) CountTeamAuditEvents(ctx context.Context, arg CountTeamAuditEv
 	return count, err
 }
 
+const countUnreadUserNotifications = `-- name: CountUnreadUserNotifications :one
+SELECT count(*)::integer
+FROM notifications
+WHERE user_id = $1
+  AND read_at IS NULL
+`
+
+func (q *Queries) CountUnreadUserNotifications(ctx context.Context, userID string) (int32, error) {
+	row := q.db.QueryRow(ctx, countUnreadUserNotifications, userID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createAuthEvent = `-- name: CreateAuthEvent :exec
 INSERT INTO auth_events (
     id,
@@ -1709,6 +1723,57 @@ func (q *Queries) CreateImpersonatedSession(ctx context.Context, arg CreateImper
 		&i.ImpersonationReason,
 		&i.ActiveOrganizationID,
 		&i.ActiveTeamID,
+	)
+	return i, err
+}
+
+const createNotification = `-- name: CreateNotification :one
+INSERT INTO notifications (
+    id,
+    user_id,
+    type,
+    title,
+    body,
+    href
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6
+)
+RETURNING id, user_id, type, title, body, href, read_at, created_at
+`
+
+type CreateNotificationParams struct {
+	ID     string      `json:"id"`
+	UserID string      `json:"userId"`
+	Type   string      `json:"type"`
+	Title  string      `json:"title"`
+	Body   string      `json:"body"`
+	Href   pgtype.Text `json:"href"`
+}
+
+func (q *Queries) CreateNotification(ctx context.Context, arg CreateNotificationParams) (Notification, error) {
+	row := q.db.QueryRow(ctx, createNotification,
+		arg.ID,
+		arg.UserID,
+		arg.Type,
+		arg.Title,
+		arg.Body,
+		arg.Href,
+	)
+	var i Notification
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Type,
+		&i.Title,
+		&i.Body,
+		&i.Href,
+		&i.ReadAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -3056,6 +3121,48 @@ func (q *Queries) ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEven
 	return items, nil
 }
 
+const listUserNotifications = `-- name: ListUserNotifications :many
+SELECT id, user_id, type, title, body, href, read_at, created_at
+FROM notifications
+WHERE user_id = $1
+ORDER BY created_at DESC
+LIMIT $2
+`
+
+type ListUserNotificationsParams struct {
+	UserID string `json:"userId"`
+	Limit  int32  `json:"limit"`
+}
+
+func (q *Queries) ListUserNotifications(ctx context.Context, arg ListUserNotificationsParams) ([]Notification, error) {
+	rows, err := q.db.Query(ctx, listUserNotifications, arg.UserID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Notification
+	for rows.Next() {
+		var i Notification
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Type,
+			&i.Title,
+			&i.Body,
+			&i.Href,
+			&i.ReadAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUserOrganizations = `-- name: ListUserOrganizations :many
 SELECT
     organizations.id, organizations.name, organizations.slug,
@@ -3192,6 +3299,21 @@ func (q *Queries) LockOrganizationForInvitation(ctx context.Context, id string) 
 	return id_2, err
 }
 
+const markAllUserNotificationsRead = `-- name: MarkAllUserNotificationsRead :execrows
+UPDATE notifications
+SET read_at = (now() AT TIME ZONE 'UTC')
+WHERE user_id = $1
+  AND read_at IS NULL
+`
+
+func (q *Queries) MarkAllUserNotificationsRead(ctx context.Context, userID string) (int64, error) {
+	result, err := q.db.Exec(ctx, markAllUserNotificationsRead, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const markUserEmailVerified = `-- name: MarkUserEmailVerified :exec
 UPDATE users
 SET email_verified = TRUE
@@ -3201,6 +3323,35 @@ WHERE id = $1
 func (q *Queries) MarkUserEmailVerified(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, markUserEmailVerified, id)
 	return err
+}
+
+const markUserNotificationRead = `-- name: MarkUserNotificationRead :one
+UPDATE notifications
+SET read_at = coalesce(read_at, (now() AT TIME ZONE 'UTC'))
+WHERE id = $1
+  AND user_id = $2
+RETURNING id, user_id, type, title, body, href, read_at, created_at
+`
+
+type MarkUserNotificationReadParams struct {
+	ID     string `json:"id"`
+	UserID string `json:"userId"`
+}
+
+func (q *Queries) MarkUserNotificationRead(ctx context.Context, arg MarkUserNotificationReadParams) (Notification, error) {
+	row := q.db.QueryRow(ctx, markUserNotificationRead, arg.ID, arg.UserID)
+	var i Notification
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Type,
+		&i.Title,
+		&i.Body,
+		&i.Href,
+		&i.ReadAt,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const ping = `-- name: Ping :one

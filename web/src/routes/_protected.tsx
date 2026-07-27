@@ -11,6 +11,7 @@ import {
 import { toast } from 'sonner'
 
 import { AppSidebar } from '@/components/app-sidebar'
+import { NotificationCenter } from '@/components/notification-center'
 import { TeamSwitcher } from '@/components/team-switcher'
 import { ThemeSwitcher } from '@/components/theme-switcher'
 import { Button } from '@/components/ui/button'
@@ -256,6 +257,7 @@ function ProtectedLayout() {
                 }
               />
             )}
+            <NotificationCenter />
             <ThemeSwitcher />
           </div>
         </header>
