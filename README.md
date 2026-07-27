@@ -44,6 +44,26 @@ sudo cp -a web/dist/. /var/www/gc-go/
 The included Caddyfile serves the static web build and proxies `/api/*` to
 Fiber on `127.0.0.1:3000`.
 
+### Restarting the API service
+
+After changing `/home/nmfairus/gc-go/api/.env`, restart the API so the running
+process loads the new environment variables:
+
+```sh
+sudo systemctl restart gc-go-api.service
+sudo systemctl status gc-go-api.service
+sudo journalctl -u gc-go-api.service -n 100 --no-pager
+```
+
+Changing only `.env` does not require `daemon-reload`. If
+`deploy/gc-go-api.service` itself changes, reload the systemd configuration
+before restarting:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl restart gc-go-api.service
+```
+
 ## Continuous deployment
 
 Pushes to `main` run `.github/workflows/deploy.yml`. GitHub Actions connects
