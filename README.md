@@ -2,7 +2,51 @@
 
 Go Fiber v3 API and React web app in one repository.
 
-## Development
+## Docker development
+
+The complete application runs with Docker Compose:
+
+- Caddy serves the Vite build and proxies `/api/*`.
+- Go Fiber runs as a private API service.
+- PostgreSQL 18 stores data in a named volume.
+- A one-shot migration container runs before the API starts.
+
+Copy the Docker environment template and start the stack:
+
+```sh
+cp .env.example .env
+docker compose up --build -d
+docker compose ps
+```
+
+With OrbStack, open:
+
+```text
+http://gc-go-web.orb.local
+```
+
+The published fallback address is `http://localhost`. PostgreSQL is not
+published to the host. Open a SQL shell with:
+
+```sh
+docker compose exec postgres \
+  sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+Useful commands:
+
+```sh
+docker compose logs -f api
+docker compose logs -f web
+docker compose run --rm migrate
+docker compose down
+docker compose down -v # also deletes the PostgreSQL data volume
+```
+
+The root `.env` is used only at runtime and must not be committed. Docker build
+contexts exclude all real environment files.
+
+## Native development
 
 ```sh
 npm install
@@ -42,7 +86,11 @@ go run ./cmd/migrate --reset
 
 The reset is destructive and is never run automatically during deployment.
 
-## Production
+## Legacy production deployment
+
+The files under `deploy/` describe the previous systemd-based deployment. They
+remain available during the Docker transition but are no longer deployed by
+GitHub Actions.
 
 ### Provisioning a new Debian server
 

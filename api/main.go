@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -38,6 +39,13 @@ func main() {
 
 	queries := db.New(database)
 	cookieSecure := os.Getenv("APP_ENV") == "production"
+	if value := os.Getenv("COOKIE_SECURE"); value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			log.Fatal("COOKIE_SECURE must be true or false")
+		}
+		cookieSecure = parsed
+	}
 
 	app := fiber.New(fiber.Config{
 		AppName: "gc-go API",
@@ -85,5 +93,9 @@ func main() {
 		return c.JSON(response)
 	})
 
-	log.Fatal(app.Listen("127.0.0.1:3000"))
+	listenAddress := os.Getenv("LISTEN_ADDR")
+	if listenAddress == "" {
+		listenAddress = "127.0.0.1:3000"
+	}
+	log.Fatal(app.Listen(listenAddress))
 }
