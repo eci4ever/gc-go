@@ -45,6 +45,7 @@ type Querier interface {
 	AdminUserGrowth(ctx context.Context) ([]AdminUserGrowthRow, error)
 	BulkAddOrganizationTeamMembers(ctx context.Context, arg BulkAddOrganizationTeamMembersParams) (int64, error)
 	BulkDeleteOrganizationTeamMembers(ctx context.Context, arg BulkDeleteOrganizationTeamMembersParams) (int64, error)
+	CanAccessOrganizationTeam(ctx context.Context, arg CanAccessOrganizationTeamParams) (bool, error)
 	ClearActiveTeamFromSessions(ctx context.Context, activeTeamID pgtype.Text) error
 	ClearActiveTeamFromUserSessions(ctx context.Context, arg ClearActiveTeamFromUserSessionsParams) error
 	ClearOrganizationFromUserSessions(ctx context.Context, arg ClearOrganizationFromUserSessionsParams) error

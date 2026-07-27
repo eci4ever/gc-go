@@ -1374,6 +1374,40 @@ func (q *Queries) BulkDeleteOrganizationTeamMembers(ctx context.Context, arg Bul
 	return result.RowsAffected(), nil
 }
 
+const canAccessOrganizationTeam = `-- name: CanAccessOrganizationTeam :one
+SELECT EXISTS (
+    SELECT 1
+    FROM teams
+    JOIN members
+      ON members.organization_id = teams.organization_id
+     AND members.user_id = $1::text
+    WHERE teams.id = $2::text
+      AND teams.organization_id = $3::text
+      AND teams.archived_at IS NULL
+      AND (
+          members.role IN ('owner', 'admin')
+          OR EXISTS (
+              SELECT 1 FROM team_members
+              WHERE team_members.team_id = teams.id
+                AND team_members.user_id = $1::text
+          )
+      )
+)
+`
+
+type CanAccessOrganizationTeamParams struct {
+	UserID         string `json:"userId"`
+	TeamID         string `json:"teamId"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) CanAccessOrganizationTeam(ctx context.Context, arg CanAccessOrganizationTeamParams) (bool, error) {
+	row := q.db.QueryRow(ctx, canAccessOrganizationTeam, arg.UserID, arg.TeamID, arg.OrganizationID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const clearActiveTeamFromSessions = `-- name: ClearActiveTeamFromSessions :exec
 UPDATE sessions SET active_team_id = NULL
 WHERE active_team_id = $1

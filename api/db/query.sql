@@ -1030,6 +1030,26 @@ WHERE teams.organization_id = sqlc.arg(organization_id)::text
 GROUP BY teams.id, lead.id
 ORDER BY teams.name;
 
+-- name: CanAccessOrganizationTeam :one
+SELECT EXISTS (
+    SELECT 1
+    FROM teams
+    JOIN members
+      ON members.organization_id = teams.organization_id
+     AND members.user_id = sqlc.arg(user_id)::text
+    WHERE teams.id = sqlc.arg(team_id)::text
+      AND teams.organization_id = sqlc.arg(organization_id)::text
+      AND teams.archived_at IS NULL
+      AND (
+          members.role IN ('owner', 'admin')
+          OR EXISTS (
+              SELECT 1 FROM team_members
+              WHERE team_members.team_id = teams.id
+                AND team_members.user_id = sqlc.arg(user_id)::text
+          )
+      )
+);
+
 -- name: GetOrganizationTeam :one
 SELECT * FROM teams
 WHERE id = $1 AND organization_id = $2;

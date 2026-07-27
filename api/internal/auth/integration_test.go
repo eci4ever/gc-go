@@ -1047,6 +1047,70 @@ func TestAuthFlowIntegration(t *testing.T) {
 	if len(accessibleTeamsBody.Teams) != 1 || accessibleTeamsBody.ActiveTeamID == nil {
 		t.Fatal("accessible teams did not include assigned active team")
 	}
+	assignedActivityResponse := authRequest(
+		t, app, http.MethodGet,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/activity",
+		nil, impersonatedCookies[0],
+	)
+	if assignedActivityResponse.StatusCode != http.StatusOK {
+		t.Fatalf("assigned member activity status = %d, want %d", assignedActivityResponse.StatusCode, http.StatusOK)
+	}
+	assignedActivityResponse.Body.Close()
+	ownerActivityResponse := authRequest(
+		t, app, http.MethodGet,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/activity",
+		nil, adminCookies[0],
+	)
+	if ownerActivityResponse.StatusCode != http.StatusOK {
+		t.Fatalf("owner activity status = %d, want %d", ownerActivityResponse.StatusCode, http.StatusOK)
+	}
+	ownerActivityResponse.Body.Close()
+
+	foreignOrgID, _ := randomValue(18)
+	foreignTeamID, _ := randomValue(18)
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO organizations (id, name, slug) VALUES ($1, 'Foreign Activity Org', $2)",
+		foreignOrgID, "foreign-activity-"+strings.ToLower(suffix),
+	); err != nil {
+		t.Fatalf("seed foreign activity organization: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM organizations WHERE id = $1", foreignOrgID)
+	})
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO teams (id, name, organization_id) VALUES ($1, 'Foreign Activity Team', $2)",
+		foreignTeamID, foreignOrgID,
+	); err != nil {
+		t.Fatalf("seed foreign activity team: %v", err)
+	}
+	foreignActivityResponse := authRequest(
+		t, app, http.MethodGet,
+		"/api/organizations/"+managedSlug+"/teams/"+foreignTeamID+"/activity",
+		nil, adminCookies[0],
+	)
+	if foreignActivityResponse.StatusCode != http.StatusForbidden {
+		t.Fatalf("foreign team activity status = %d, want %d", foreignActivityResponse.StatusCode, http.StatusForbidden)
+	}
+	foreignActivityResponse.Body.Close()
+
+	removeAssignedMemberResponse := authRequest(
+		t, app, http.MethodDelete,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/members/"+managedUserBody.User.ID,
+		nil, adminCookies[0],
+	)
+	if removeAssignedMemberResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("remove assigned member status = %d, want %d", removeAssignedMemberResponse.StatusCode, http.StatusNoContent)
+	}
+	removeAssignedMemberResponse.Body.Close()
+	unassignedActivityResponse := authRequest(
+		t, app, http.MethodGet,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/activity",
+		nil, impersonatedCookies[0],
+	)
+	if unassignedActivityResponse.StatusCode != http.StatusForbidden {
+		t.Fatalf("unassigned member activity status = %d, want %d", unassignedActivityResponse.StatusCode, http.StatusForbidden)
+	}
+	unassignedActivityResponse.Body.Close()
 
 	if _, err := pool.Exec(
 		context.Background(),
@@ -1056,6 +1120,24 @@ func TestAuthFlowIntegration(t *testing.T) {
 	); err != nil {
 		t.Fatalf("promote organization admin: %v", err)
 	}
+	adminActivityResponse := authRequest(
+		t, app, http.MethodGet,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/activity",
+		nil, impersonatedCookies[0],
+	)
+	if adminActivityResponse.StatusCode != http.StatusOK {
+		t.Fatalf("organization admin activity status = %d, want %d", adminActivityResponse.StatusCode, http.StatusOK)
+	}
+	adminActivityResponse.Body.Close()
+	adminActivateTeamResponse := authRequest(
+		t, app, http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/activate",
+		nil, impersonatedCookies[0],
+	)
+	if adminActivateTeamResponse.StatusCode != http.StatusOK {
+		t.Fatalf("organization admin activate team status = %d, want %d", adminActivateTeamResponse.StatusCode, http.StatusOK)
+	}
+	adminActivateTeamResponse.Body.Close()
 	archiveTeamResponse := authRequest(
 		t,
 		app,
@@ -1273,7 +1355,7 @@ func TestAuthFlowIntegration(t *testing.T) {
 		t.Fatalf("team activity status = %d, want %d", teamActivityResponse.StatusCode, http.StatusOK)
 	}
 	var teamActivityBody struct {
-		Events []db.ListTeamAuditEventsRow `json:"events"`
+		Events     []db.ListTeamAuditEventsRow `json:"events"`
 		Pagination struct {
 			Page, PageSize int
 			Total          int64

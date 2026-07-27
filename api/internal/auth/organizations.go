@@ -503,16 +503,25 @@ func (h *Handler) archiveOrganizationWorkspaceTeam(c fiber.Ctx) error {
 	if err := c.Bind().Body(&request); err != nil {
 		return jsonError(c, fiber.StatusBadRequest, "Invalid request body")
 	}
-	team, err := h.queries.SetOrganizationTeamArchived(c.Context(), db.SetOrganizationTeamArchivedParams{
+	tx, err := h.pool.Begin(c.Context())
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to archive team")
+	}
+	defer tx.Rollback(c.Context())
+	queries := h.queries.WithTx(tx)
+	team, err := queries.SetOrganizationTeamArchived(c.Context(), db.SetOrganizationTeamArchivedParams{
 		Archived: request.Archived, ID: c.Params("teamId"), OrganizationID: access.Org.ID,
 	})
 	if err != nil {
 		return jsonError(c, fiber.StatusNotFound, "Team not found")
 	}
 	if request.Archived {
-		if err := h.queries.ClearActiveTeamFromSessions(c.Context(), textValue(team.ID)); err != nil {
+		if err := queries.ClearActiveTeamFromSessions(c.Context(), textValue(team.ID)); err != nil {
 			return jsonError(c, fiber.StatusInternalServerError, "Unable to archive team")
 		}
+	}
+	if err := tx.Commit(c.Context()); err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to archive team")
 	}
 	event := "organization_team_archived"
 	if !request.Archived {
@@ -527,19 +536,28 @@ func (h *Handler) deleteOrganizationWorkspaceTeam(c fiber.Ctx) error {
 	if !ok {
 		return nil
 	}
-	before, err := h.queries.GetOrganizationTeam(c.Context(), db.GetOrganizationTeamParams{
+	tx, err := h.pool.Begin(c.Context())
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to delete team")
+	}
+	defer tx.Rollback(c.Context())
+	queries := h.queries.WithTx(tx)
+	before, err := queries.GetOrganizationTeam(c.Context(), db.GetOrganizationTeamParams{
 		ID: c.Params("teamId"), OrganizationID: access.Org.ID,
 	})
 	if err != nil {
 		return jsonError(c, fiber.StatusNotFound, "Team not found")
 	}
-	if err := h.queries.ClearActiveTeamFromSessions(c.Context(), textValue(before.ID)); err != nil {
+	if err := queries.ClearActiveTeamFromSessions(c.Context(), textValue(before.ID)); err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to delete team")
 	}
-	team, err := h.queries.DeleteOrganizationTeam(c.Context(), db.DeleteOrganizationTeamParams{
+	team, err := queries.DeleteOrganizationTeam(c.Context(), db.DeleteOrganizationTeamParams{
 		ID: before.ID, OrganizationID: access.Org.ID,
 	})
 	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to delete team")
+	}
+	if err := tx.Commit(c.Context()); err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to delete team")
 	}
 	h.recordOrganizationAudit(c, access, "organization_team_deleted", "team", team.ID, "", team, nil)
@@ -602,7 +620,13 @@ func (h *Handler) deleteOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
 	if !ok {
 		return nil
 	}
-	team, err := h.queries.GetOrganizationTeam(c.Context(), db.GetOrganizationTeamParams{
+	tx, err := h.pool.Begin(c.Context())
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to remove team member")
+	}
+	defer tx.Rollback(c.Context())
+	queries := h.queries.WithTx(tx)
+	team, err := queries.GetOrganizationTeam(c.Context(), db.GetOrganizationTeamParams{
 		ID: c.Params("teamId"), OrganizationID: access.Org.ID,
 	})
 	if err != nil {
@@ -611,15 +635,18 @@ func (h *Handler) deleteOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
 	if team.ArchivedAt.Valid {
 		return jsonError(c, fiber.StatusConflict, "Restore the team before changing members")
 	}
-	count, err := h.queries.DeleteOrganizationTeamMember(c.Context(), db.DeleteOrganizationTeamMemberParams{
+	count, err := queries.DeleteOrganizationTeamMember(c.Context(), db.DeleteOrganizationTeamMemberParams{
 		TeamID: c.Params("teamId"), OrganizationID: access.Org.ID, UserID: c.Params("userId"),
 	})
 	if err != nil || count == 0 {
 		return jsonError(c, fiber.StatusNotFound, "Team member not found")
 	}
-	if err := h.queries.ClearActiveTeamFromUserSessions(c.Context(), db.ClearActiveTeamFromUserSessionsParams{
+	if err := queries.ClearActiveTeamFromUserSessions(c.Context(), db.ClearActiveTeamFromUserSessionsParams{
 		UserID: c.Params("userId"), ActiveTeamID: textValue(c.Params("teamId")),
 	}); err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to remove team member")
+	}
+	if err := tx.Commit(c.Context()); err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to remove team member")
 	}
 	h.recordOrganizationAudit(c, access, "organization_team_member_removed", "team", c.Params("teamId"), "", fiber.Map{"userId": c.Params("userId")}, nil)
@@ -705,17 +732,20 @@ func (h *Handler) bulkOrganizationWorkspaceTeamMembers(c fiber.Ctx) error {
 			},
 		)
 	}
-	if err != nil || tx.Commit(c.Context()) != nil {
+	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to update team members")
 	}
 	if request.Action == "remove" {
 		for _, userID := range unique {
-			if err := h.queries.ClearActiveTeamFromUserSessions(c.Context(), db.ClearActiveTeamFromUserSessionsParams{
+			if err := queries.ClearActiveTeamFromUserSessions(c.Context(), db.ClearActiveTeamFromUserSessionsParams{
 				UserID: userID, ActiveTeamID: textValue(team.ID),
 			}); err != nil {
 				return jsonError(c, fiber.StatusInternalServerError, "Unable to update team members")
 			}
 		}
+	}
+	if err := tx.Commit(c.Context()); err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to update team members")
 	}
 	event := "organization_team_members_added"
 	if request.Action == "remove" {
@@ -798,10 +828,14 @@ func (h *Handler) listOrganizationTeamActivity(c fiber.Ctx) error {
 		return nil
 	}
 	teamID := c.Params("teamId")
-	if _, err := h.queries.GetOrganizationTeam(c.Context(), db.GetOrganizationTeamParams{
-		ID: teamID, OrganizationID: access.Org.ID,
-	}); err != nil {
-		return jsonError(c, fiber.StatusNotFound, "Team not found")
+	canAccess, err := h.queries.CanAccessOrganizationTeam(c.Context(), db.CanAccessOrganizationTeamParams{
+		UserID: access.Current.UserID, TeamID: teamID, OrganizationID: access.Org.ID,
+	})
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to verify team access")
+	}
+	if !canAccess {
+		return jsonError(c, fiber.StatusForbidden, "This team is not available to your account")
 	}
 	page, pageSize := adminPagination(c)
 	events, err := h.queries.ListTeamAuditEvents(c.Context(), db.ListTeamAuditEventsParams{
