@@ -25,6 +25,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -201,15 +209,24 @@ function OrganizationRoles() {
       </div>
 
       {!query.isLoading && !query.data?.roles.length && (
-        <Card className="border-dashed">
-          <CardContent className="py-10 text-center">
-            <p className="font-medium">No custom roles yet</p>
-            <p className="mt-1 text-sm text-muted-foreground">
+        <Empty className="border">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <ShieldCheckIcon />
+            </EmptyMedia>
+            <EmptyTitle>No Custom Roles Yet</EmptyTitle>
+            <EmptyDescription>
               Create a role when standard owner, admin, and member access is too
               broad.
-            </p>
-          </CardContent>
-        </Card>
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button onClick={() => setEditing("new")}>
+              <PlusIcon data-icon="inline-start" />
+              Create Role
+            </Button>
+          </EmptyContent>
+        </Empty>
       )}
 
       <div className="mt-4 flex flex-wrap items-start justify-between gap-3">

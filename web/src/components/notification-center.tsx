@@ -13,6 +13,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   markAllNotificationsRead,
   markNotificationRead,
@@ -93,48 +95,53 @@ export function NotificationCenter() {
           ) : null}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuGroup>
-          {notifications.isPending ? (
-            <DropdownMenuItem disabled>Loading notifications…</DropdownMenuItem>
-          ) : notifications.isError ? (
-            <DropdownMenuItem
-              onClick={() => notifications.refetch()}
-            >
-              Unable to load. Try again
-            </DropdownMenuItem>
-          ) : notifications.data.notifications.length ? (
-            notifications.data.notifications.map((notification) => (
-              <DropdownMenuItem
-                key={notification.id}
-                className={cn(
-                  'items-start py-3 normal-case tracking-normal',
-                  !notification.readAt && 'bg-muted',
-                )}
-                onClick={() => openNotification(notification)}
-              >
-                <span
-                  className={cn(
-                    'mt-1.5 size-2 shrink-0 rounded-full bg-muted-foreground/30',
-                    !notification.readAt && 'bg-primary',
-                  )}
-                />
-                <span className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className="truncate font-semibold">
-                    {notification.title}
-                  </span>
-                  <span className="line-clamp-2 text-muted-foreground">
-                    {notification.body}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {formatNotificationTime(notification.createdAt)}
-                  </span>
-                </span>
+        <ScrollArea className="max-h-96">
+          <DropdownMenuGroup>
+            {notifications.isPending ? (
+              <DropdownMenuItem disabled className="flex flex-col gap-2 py-3">
+                <Skeleton className="h-3 w-2/3" />
+                <Skeleton className="h-3 w-full" />
+                <span className="sr-only">Loading notifications…</span>
               </DropdownMenuItem>
-            ))
-          ) : (
-            <DropdownMenuItem disabled>No notifications yet</DropdownMenuItem>
-          )}
-        </DropdownMenuGroup>
+            ) : notifications.isError ? (
+              <DropdownMenuItem onClick={() => notifications.refetch()}>
+                Unable to load. Try again
+              </DropdownMenuItem>
+            ) : notifications.data.notifications.length ? (
+              notifications.data.notifications.map((notification) => (
+                <DropdownMenuItem
+                  key={notification.id}
+                  className={cn(
+                    'items-start py-3 normal-case tracking-normal',
+                    !notification.readAt && 'bg-muted',
+                  )}
+                  onClick={() => openNotification(notification)}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'mt-1.5 size-2 shrink-0 rounded-full bg-muted-foreground/30',
+                      !notification.readAt && 'bg-primary',
+                    )}
+                  />
+                  <span className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="truncate font-semibold">
+                      {notification.title}
+                    </span>
+                    <span className="line-clamp-2 text-muted-foreground">
+                      {notification.body}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {formatNotificationTime(notification.createdAt)}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              ))
+            ) : (
+              <DropdownMenuItem disabled>No notifications yet</DropdownMenuItem>
+            )}
+          </DropdownMenuGroup>
+        </ScrollArea>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -146,12 +153,18 @@ function formatNotificationTime(value: string) {
   if (!Number.isFinite(elapsed) || elapsed < 0) {
     return 'Just now'
   }
+  const relativeTime = new Intl.RelativeTimeFormat(undefined, {
+    numeric: 'auto',
+    style: 'narrow',
+  })
   const minutes = Math.floor(elapsed / 60_000)
   if (minutes < 1) return 'Just now'
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 60) return relativeTime.format(-minutes, 'minute')
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
+  if (hours < 24) return relativeTime.format(-hours, 'hour')
   const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d ago`
-  return createdAt.toLocaleDateString()
+  if (days < 7) return relativeTime.format(-days, 'day')
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+  }).format(createdAt)
 }

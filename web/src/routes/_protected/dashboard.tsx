@@ -27,6 +27,13 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty'
+import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
@@ -238,9 +245,17 @@ function Dashboard() {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              No active sessions to display.
-            </p>
+            <Empty className="p-6">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <LaptopIcon />
+                </EmptyMedia>
+                <EmptyTitle>No Active Sessions</EmptyTitle>
+                <EmptyDescription>
+                  Recent devices will appear here after you sign in.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           )}
         </CardContent>
       </Card>

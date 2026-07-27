@@ -5,6 +5,16 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { ArchiveIcon, MailPlusIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { DataTable } from "@/components/data-table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,11 +34,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -397,26 +416,34 @@ export function TeamDetails() {
             header: "Team role",
             cell: ({ row }: { row: { original: MemberRow } }) =>
               membersEditable ? (
-                <select
-                  aria-label={`Team role for ${row.original.name}`}
-                  className="h-9 w-40 border-b bg-transparent text-sm"
+                <Select
                   value={row.original.teamRoleId ?? "none"}
                   disabled={assignRole.isPending}
-                  onChange={(event) =>
+                  onValueChange={(value) =>
                     assignRole.mutate({
                       userId: row.original.userId,
                       roleId:
-                        event.target.value === "none" ? "" : event.target.value,
+                        value === "none" ? "" : String(value ?? ""),
                     })
                   }
                 >
-                  <option value="none">No team role</option>
-                  {teamRoles.data?.roles.map((role) => (
-                    <option key={role.id} value={role.id}>
-                      {role.name}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger
+                    className="w-40"
+                    aria-label={`Team role for ${row.original.name}`}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="none">No team role</SelectItem>
+                      {teamRoles.data?.roles.map((role) => (
+                        <SelectItem key={role.id} value={role.id}>
+                          {role.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
               ) : (
                 <Badge variant="outline">
                   {row.original.teamRoleName ?? "Member"}
@@ -475,18 +502,21 @@ export function TeamDetails() {
                 : "Update its purpose and team lead."}
             </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="team-detail-name">Name</Label>
+          <CardContent>
+            <FieldGroup className="grid gap-4 sm:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor="team-detail-name">Name</FieldLabel>
               <Input
                 id="team-detail-name"
+                name="name"
+                autoComplete="off"
                 value={name}
                 disabled={!editable}
                 onChange={(event) => setName(event.target.value)}
               />
-            </div>
-            <div className="space-y-2">
-              <Label>Team lead</Label>
+            </Field>
+            <Field>
+              <FieldLabel>Team lead</FieldLabel>
               <Select
                 value={leadUserId}
                 disabled={!editable}
@@ -496,29 +526,36 @@ export function TeamDetails() {
                   <SelectValue placeholder="No team lead" />
                 </SelectTrigger>
                 <SelectContent>
-                  {organizationMembers.data?.members.map((member) => (
-                    <SelectItem key={member.userId} value={member.userId}>
-                      {member.name}
-                    </SelectItem>
-                  ))}
+                  <SelectGroup>
+                    {organizationMembers.data?.members.map((member) => (
+                      <SelectItem key={member.userId} value={member.userId}>
+                        {member.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="team-detail-description">Description</Label>
+            </Field>
+            <Field className="sm:col-span-2">
+              <FieldLabel htmlFor="team-detail-description">
+                Description
+              </FieldLabel>
               <Input
                 id="team-detail-description"
+                name="description"
+                autoComplete="off"
                 value={description}
                 disabled={!editable}
                 onChange={(event) => setDescription(event.target.value)}
               />
-            </div>
+            </Field>
             <Button
               disabled={!editable || !name || update.isPending}
               onClick={() => update.mutate()}
             >
               {update.isPending ? "Saving…" : "Save team"}
             </Button>
+            </FieldGroup>
           </CardContent>
         </Card>
       )}
@@ -633,9 +670,17 @@ export function TeamDetails() {
             {!activity.isPending &&
               !activity.isError &&
               activity.data?.events.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  No team activity yet.
-                </p>
+                <Empty className="py-8">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <ArchiveIcon />
+                    </EmptyMedia>
+                    <EmptyTitle>No Activity Yet</EmptyTitle>
+                    <EmptyDescription>
+                      No team activity yet.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               )}
             {activity.data?.events.map((event) => (
               <div
@@ -689,32 +734,30 @@ export function TeamDetails() {
         </Card>
       )}
 
-      <Dialog
+      <AlertDialog
         open={confirmation !== null}
         onOpenChange={(open) => !open && setConfirmation(null)}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
               {confirmation === "delete"
                 ? "Delete team?"
                 : confirmation === "archive"
                   ? "Archive team?"
                   : "Restore team?"}
-            </DialogTitle>
-            <DialogDescription>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
               {confirmation === "delete"
                 ? "This permanently deletes the team and removes all of its memberships. This action cannot be undone."
                 : confirmation === "archive"
                   ? "Members remain assigned, but the team becomes read-only until restored."
                   : "This makes the team editable again."}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmation(null)}>
-              Cancel
-            </Button>
-            <Button
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
               variant={confirmation === "delete" ? "destructive" : "default"}
               disabled={lifecycle.isPending || confirmation === null}
               onClick={() => confirmation && lifecycle.mutate(confirmation)}
@@ -724,12 +767,12 @@ export function TeamDetails() {
                 : confirmation === "delete"
                   ? "Delete team"
                   : confirmation === "archive"
-                    ? "Archive team"
-                    : "Restore team"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+                  ? "Archive team"
+                  : "Restore team"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent>
           <DialogHeader>
@@ -761,10 +804,12 @@ export function TeamDetails() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="member">Member</SelectItem>
-                  {organization.role === "owner" && (
-                    <SelectItem value="admin">Admin</SelectItem>
-                  )}
+                  <SelectGroup>
+                    <SelectItem value="member">Member</SelectItem>
+                    {organization.role === "owner" && (
+                      <SelectItem value="admin">Admin</SelectItem>
+                    )}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </div>

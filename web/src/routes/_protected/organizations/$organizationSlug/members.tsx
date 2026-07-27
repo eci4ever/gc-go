@@ -19,11 +19,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -128,18 +129,21 @@ function OrganizationMembers() {
                   Invitations expire after seven days.
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="invite-email">Email</Label>
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="invite-email">Email</FieldLabel>
                   <Input
                     id="invite-email"
+                    name="email"
                     type="email"
+                    autoComplete="email"
+                    spellCheck={false}
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label>Role</Label>
+                </Field>
+                <Field>
+                  <FieldLabel>Role</FieldLabel>
                   <Select
                     value={role}
                     onValueChange={(value) => setRole(value as typeof role)}
@@ -148,13 +152,15 @@ function OrganizationMembers() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="member">Member</SelectItem>
-                      {organization.role === "owner" && (
-                        <SelectItem value="admin">Admin</SelectItem>
-                      )}
+                      <SelectGroup>
+                        <SelectItem value="member">Member</SelectItem>
+                        {organization.role === "owner" && (
+                          <SelectItem value="admin">Admin</SelectItem>
+                        )}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
-                </div>
+                </Field>
                 <Button
                   className="w-full"
                   disabled={!email || invite.isPending}
@@ -162,7 +168,7 @@ function OrganizationMembers() {
                 >
                   {invite.isPending ? "Sending…" : "Send invitation"}
                 </Button>
-              </div>
+              </FieldGroup>
             </DialogContent>
           </Dialog>
         )}
@@ -207,13 +213,15 @@ function OrganizationMembers() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="member">Member</SelectItem>
-                    {roles.data?.roles.map((role) => (
-                      <SelectItem key={role.id} value={`custom:${role.id}`}>
-                        {role.name}
-                      </SelectItem>
-                    ))}
+                    <SelectGroup>
+                      <SelectItem value="admin">Admin</SelectItem>
+                      <SelectItem value="member">Member</SelectItem>
+                      {roles.data?.roles.map((role) => (
+                        <SelectItem key={role.id} value={`custom:${role.id}`}>
+                          {role.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               )}

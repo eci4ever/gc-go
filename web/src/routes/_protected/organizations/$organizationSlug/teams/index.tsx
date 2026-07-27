@@ -3,6 +3,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArchiveIcon, PlusIcon, UsersIcon } from "lucide-react";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,13 +26,20 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   archiveOrganizationTeam,
   createOrganizationTeam,
@@ -102,23 +119,29 @@ function OrganizationTeams() {
                   You can assign members and a team lead afterward.
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="team-name">Name</Label>
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="team-name">Name</FieldLabel>
                   <Input
                     id="team-name"
+                    name="name"
+                    autoComplete="off"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="team-description">Description</Label>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="team-description">
+                    Description
+                  </FieldLabel>
                   <Input
                     id="team-description"
+                    name="description"
+                    autoComplete="off"
                     value={description}
                     onChange={(event) => setDescription(event.target.value)}
                   />
-                </div>
+                </Field>
                 <Button
                   className="w-full"
                   disabled={!name || create.isPending}
@@ -126,7 +149,7 @@ function OrganizationTeams() {
                 >
                   {create.isPending ? "Creating…" : "Create team"}
                 </Button>
-              </div>
+              </FieldGroup>
             </DialogContent>
           </Dialog>
         )}
@@ -180,32 +203,44 @@ function OrganizationTeams() {
         ))}
       </div>
       {!query.isPending && !query.data?.teams.length && (
-        <Card>
-          <CardContent className="py-12 text-center text-sm text-muted-foreground">
-            No teams yet. Create the first team for this organization.
-          </CardContent>
-        </Card>
+        <Empty className="border">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <UsersIcon />
+            </EmptyMedia>
+            <EmptyTitle>No Teams Yet</EmptyTitle>
+            <EmptyDescription>
+              Create the first team to organize members into a focused group.
+            </EmptyDescription>
+          </EmptyHeader>
+          {canCreate && (
+            <EmptyContent>
+              <Button onClick={() => setOpen(true)}>
+                <PlusIcon data-icon="inline-start" />
+                Create Team
+              </Button>
+            </EmptyContent>
+          )}
+        </Empty>
       )}
-      <Dialog
+      <AlertDialog
         open={archiveTarget !== null}
         onOpenChange={(open) => !open && setArchiveTarget(null)}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
               {archiveTarget?.archivedAt ? "Restore team?" : "Archive team?"}
-            </DialogTitle>
-            <DialogDescription>
+            </AlertDialogTitle>
+            <AlertDialogDescription>
               {archiveTarget?.archivedAt
                 ? "This makes the team editable again."
                 : "Members remain assigned, but the team becomes read-only until restored."}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setArchiveTarget(null)}>
-              Cancel
-            </Button>
-            <Button
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
               disabled={archive.isPending || !archiveTarget}
               onClick={() =>
                 archiveTarget &&
@@ -220,10 +255,10 @@ function OrganizationTeams() {
                 : archiveTarget?.archivedAt
                   ? "Restore team"
                   : "Archive team"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

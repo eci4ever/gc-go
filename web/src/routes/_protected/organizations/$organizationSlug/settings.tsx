@@ -18,8 +18,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Field as FormField,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -114,30 +117,48 @@ function OrganizationSettings() {
           <CardDescription>Update the workspace identity.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          <Field label="Name">
+          <FormField>
+            <FieldLabel htmlFor="organization-name">Name</FieldLabel>
             <Input
+              id="organization-name"
+              name="name"
+              autoComplete="organization"
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
-          </Field>
-          <Field label="Slug">
+          </FormField>
+          <FormField>
+            <FieldLabel htmlFor="organization-slug">Slug</FieldLabel>
             <Input
+              id="organization-slug"
+              name="slug"
+              autoComplete="off"
+              spellCheck={false}
               value={slug}
               onChange={(event) => setSlug(event.target.value)}
             />
-          </Field>
-          <Field label="Logo URL">
+          </FormField>
+          <FormField>
+            <FieldLabel htmlFor="organization-logo">Logo URL</FieldLabel>
             <Input
+              id="organization-logo"
+              name="logo"
+              type="url"
+              autoComplete="url"
               value={logo}
               onChange={(event) => setLogo(event.target.value)}
             />
-          </Field>
-          <Field label="Metadata">
+          </FormField>
+          <FormField>
+            <FieldLabel htmlFor="organization-metadata">Metadata</FieldLabel>
             <Input
+              id="organization-metadata"
+              name="metadata"
+              autoComplete="off"
               value={metadata}
               onChange={(event) => setMetadata(event.target.value)}
             />
-          </Field>
+          </FormField>
           <div className="sm:col-span-2">
             <Button
               disabled={!name || !slug || update.isPending}
@@ -218,9 +239,9 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
+    <FormField>
+      <FieldLabel>{label}</FieldLabel>
       {children}
-    </div>
+    </FormField>
   );
 }

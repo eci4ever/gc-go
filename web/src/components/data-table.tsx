@@ -57,9 +57,12 @@ export function DataTable<TData>({
   })
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <Input
         className="max-w-sm"
+        aria-label={searchPlaceholder}
+        name="table-search"
+        autoComplete="off"
         placeholder={searchPlaceholder}
         value={
           searchValue ??
@@ -141,7 +144,7 @@ export function DataTable<TData>({
                 : table.previousPage()
             }
           >
-            <ChevronLeftIcon />
+            <ChevronLeftIcon aria-hidden="true" />
           </Button>
           <span className="text-xs text-muted-foreground">
             Page {pagination?.page ?? table.getState().pagination.pageIndex + 1}{' '}
@@ -165,7 +168,7 @@ export function DataTable<TData>({
                 : table.nextPage()
             }
           >
-            <ChevronRightIcon />
+            <ChevronRightIcon aria-hidden="true" />
           </Button>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { ActivityIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -9,6 +10,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import {
   hasOrganizationPermission,
   organizationAuditQueryOptions,
@@ -73,9 +81,17 @@ function OrganizationAudit() {
             </div>
           ))}
           {!query.isPending && !query.data?.events.length && (
-            <div className="px-6 py-12 text-center text-sm text-muted-foreground">
-              No organization activity recorded yet.
-            </div>
+            <Empty className="py-12">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <ActivityIcon />
+                </EmptyMedia>
+                <EmptyTitle>No Activity Yet</EmptyTitle>
+                <EmptyDescription>
+                  Security-sensitive organization events will appear here.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           )}
         </CardContent>
       </Card>
