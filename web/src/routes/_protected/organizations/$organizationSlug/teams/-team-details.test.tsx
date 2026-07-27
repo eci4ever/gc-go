@@ -174,4 +174,89 @@ describe('TeamDetails member management', () => {
     )
     expect(mocks.success).not.toHaveBeenCalled()
   })
+
+  it('sends a team-targeted invitation payload', async () => {
+    handlers()
+    let payload: unknown
+    server.use(
+      http.post('/api/organizations/:slug/invitations', async ({ request }) => {
+        payload = await request.json()
+        return HttpResponse.json({ invitation: { id: 'invite-1' } }, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderWithQuery(<TeamDetails />)
+
+    await user.click(await screen.findByRole('button', { name: /invite to team/i }))
+    await user.type(screen.getByLabelText('Email'), 'new@example.com')
+    await user.click(screen.getByRole('button', { name: 'Send invitation' }))
+
+    await waitFor(() => expect(payload).toEqual({
+      email: 'new@example.com',
+      role: 'member',
+      teamId: 'team-1',
+    }))
+    expect(mocks.success).toHaveBeenCalledWith('Team invitation sent')
+  })
+
+  it('shows pending team invitations and cancels them', async () => {
+    handlers()
+    let cancelled = ''
+    server.use(
+      http.get('/api/organizations/:slug/members', () =>
+        HttpResponse.json({
+          members: [{ ...assigned, role: 'member', emailVerified: true }, available],
+          invitations: [{
+            id: 'invite-1',
+            email: 'pending@example.com',
+            role: 'member',
+            status: 'pending',
+            expiresAt: '2026-08-03T00:00:00Z',
+            createdAt: '2026-07-27T00:00:00Z',
+            invitedUserId: null,
+            teamId: 'team-1',
+            teamName: 'Operations',
+          }],
+        }),
+      ),
+      http.delete('/api/organizations/:slug/invitations/:invitationId', ({ params }) => {
+        cancelled = String(params.invitationId)
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderWithQuery(<TeamDetails />)
+
+    expect(await screen.findByText('pending@example.com')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(cancelled).toBe('invite-1'))
+    expect(mocks.success).toHaveBeenCalledWith('Invitation cancelled')
+  })
+
+  it('hides invitation controls from read-only members', async () => {
+    mocks.role = 'member'
+    handlers()
+    renderWithQuery(<TeamDetails />)
+
+    await screen.findByText('Assigned User')
+    expect(screen.queryByRole('button', { name: /invite to team/i })).not.toBeInTheDocument()
+  })
+
+  it('toasts invitation errors', async () => {
+    handlers()
+    server.use(
+      http.post('/api/organizations/:slug/invitations', () =>
+        HttpResponse.json({ error: 'A pending invitation already exists' }, { status: 409 }),
+      ),
+    )
+    const user = userEvent.setup()
+    renderWithQuery(<TeamDetails />)
+
+    await user.click(await screen.findByRole('button', { name: /invite to team/i }))
+    await user.type(screen.getByLabelText('Email'), 'duplicate@example.com')
+    await user.click(screen.getByRole('button', { name: 'Send invitation' }))
+    await waitFor(() =>
+      expect(mocks.error).toHaveBeenCalledWith('A pending invitation already exists'),
+    )
+  })
 })

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ArchiveIcon, Trash2Icon } from 'lucide-react'
+import { ArchiveIcon, MailPlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { DataTable } from '@/components/data-table'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -21,12 +21,15 @@ import {
 import {
   archiveOrganizationTeam,
   bulkUpdateTeamMembers,
+  cancelOrganizationInvitation,
   deleteOrganizationTeam,
+  inviteOrganizationMember,
   organizationMembersQueryOptions,
   organizationTeamsQueryOptions,
   teamMembersQueryOptions,
   updateOrganizationTeam,
   type TeamMember,
+  type OrganizationInvitation,
 } from '@/lib/organizations'
 
 const teamRoute = getRouteApi(
@@ -34,6 +37,7 @@ const teamRoute = getRouteApi(
 )
 
 type MemberRow = TeamMember & { search: string }
+type InvitationRow = OrganizationInvitation & { search: string }
 type Confirmation = 'archive' | 'restore' | 'delete' | null
 
 export function TeamDetails() {
@@ -55,6 +59,9 @@ export function TeamDetails() {
   const [selectedAssigned, setSelectedAssigned] = useState<string[]>([])
   const [selectedAvailable, setSelectedAvailable] = useState<string[]>([])
   const [confirmation, setConfirmation] = useState<Confirmation>(null)
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member')
 
   useEffect(() => {
     if (!team) return
@@ -111,6 +118,34 @@ export function TeamDetails() {
     },
     onError: (error) => toast.error(error.message),
   })
+  const invite = useMutation({
+    mutationFn: () => inviteOrganizationMember(organizationSlug, {
+      email: inviteEmail,
+      role: inviteRole,
+      teamId,
+    }),
+    onSuccess: async () => {
+      setInviteOpen(false)
+      setInviteEmail('')
+      setInviteRole('member')
+      toast.success('Team invitation sent')
+      await queryClient.invalidateQueries({
+        queryKey: ['organizations', organizationSlug, 'members'],
+      })
+    },
+    onError: (error) => toast.error(error.message),
+  })
+  const cancelInvite = useMutation({
+    mutationFn: (invitationId: string) =>
+      cancelOrganizationInvitation(organizationSlug, invitationId),
+    onSuccess: async () => {
+      toast.success('Invitation cancelled')
+      await queryClient.invalidateQueries({
+        queryKey: ['organizations', organizationSlug, 'members'],
+      })
+    },
+    onError: (error) => toast.error(error.message),
+  })
 
   const assignedIDs = new Set(teamMembers.data?.members.map((member) => member.userId))
   const assignedRows = useMemo<MemberRow[]>(
@@ -134,6 +169,45 @@ export function TeamDetails() {
       })),
     [organizationMembers.data?.members, teamMembers.data?.members],
   )
+  const pendingInvitations = useMemo<InvitationRow[]>(
+    () => (organizationMembers.data?.invitations ?? [])
+      .filter((invitation) => invitation.teamId === teamId && invitation.status === 'pending')
+      .map((invitation) => ({ ...invitation, search: invitation.email })),
+    [organizationMembers.data?.invitations, teamId],
+  )
+  const invitationColumns: ColumnDef<InvitationRow>[] = [
+    {
+      accessorKey: 'search',
+      header: 'Pending invitation',
+      cell: ({ row }) => (
+        <div>
+          <p className="font-medium">{row.original.email}</p>
+          <p className="text-xs text-muted-foreground">
+            Expires {new Date(row.original.expiresAt).toLocaleDateString()}
+          </p>
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'role',
+      header: 'Organization role',
+      cell: ({ row }) => <Badge variant="outline">{row.original.role ?? 'member'}</Badge>,
+    },
+    ...(editable ? [{
+      id: 'actions',
+      header: '',
+      cell: ({ row }: { row: { original: InvitationRow } }) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={cancelInvite.isPending}
+          onClick={() => cancelInvite.mutate(row.original.id)}
+        >
+          Cancel
+        </Button>
+      ),
+    } satisfies ColumnDef<InvitationRow>] : []),
+  ]
 
   const columns = (
     rows: MemberRow[],
@@ -249,9 +323,16 @@ export function TeamDetails() {
       )}
 
       <Card>
-        <CardHeader>
-          <CardTitle>Team members</CardTitle>
-          <CardDescription>{assignedRows.length} assigned{archived ? ' · Archived teams are read-only' : ''}</CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle>Team members</CardTitle>
+            <CardDescription>{assignedRows.length} assigned{archived ? ' · Archived teams are read-only' : ''}</CardDescription>
+          </div>
+          {editable && (
+            <Button onClick={() => setInviteOpen(true)}>
+              <MailPlusIcon /> Invite to team
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
           {editable && selectedAssigned.length > 0 && (
@@ -266,6 +347,18 @@ export function TeamDetails() {
             searchPlaceholder="Search assigned members…"
             emptyMessage={teamMembers.isPending ? 'Loading members…' : 'This team has no members.'}
           />
+          {pendingInvitations.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">Pending invitations</h3>
+              <DataTable
+                columns={invitationColumns}
+                data={pendingInvitations}
+                searchColumn="search"
+                searchPlaceholder="Search pending invitations…"
+                emptyMessage="No pending invitations."
+              />
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -314,6 +407,47 @@ export function TeamDetails() {
               onClick={() => confirmation && lifecycle.mutate(confirmation)}
             >
               {lifecycle.isPending ? 'Working…' : confirmation === 'delete' ? 'Delete team' : confirmation === 'archive' ? 'Archive team' : 'Restore team'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Invite to {team?.name ?? 'team'}</DialogTitle>
+            <DialogDescription>
+              The user will join the organization and this team after accepting.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="team-invite-email">Email</Label>
+              <Input
+                id="team-invite-email"
+                type="email"
+                value={inviteEmail}
+                onChange={(event) => setInviteEmail(event.target.value)}
+                placeholder="member@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Organization role</Label>
+              <Select value={inviteRole} onValueChange={(value) => setInviteRole(value as 'admin' | 'member')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">Member</SelectItem>
+                  {organization.role === 'owner' && <SelectItem value="admin">Admin</SelectItem>}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!inviteEmail.trim() || invite.isPending}
+              onClick={() => invite.mutate()}
+            >
+              {invite.isPending ? 'Sending…' : 'Send invitation'}
             </Button>
           </DialogFooter>
         </DialogContent>

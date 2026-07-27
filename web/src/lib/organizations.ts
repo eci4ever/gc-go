@@ -37,6 +37,8 @@ export type OrganizationInvitation = {
   expiresAt: string
   createdAt: string
   invitedUserId: string | null
+  teamId: string | null
+  teamName: string | null
 }
 
 export type OrganizationTeam = {
@@ -195,7 +197,7 @@ export function removeOrganizationMember(slug: string, userId: string) {
 
 export function inviteOrganizationMember(
   slug: string,
-  input: { email: string; role: 'admin' | 'member' },
+  input: { email: string; role: 'admin' | 'member'; teamId?: string },
 ) {
   return request<{ invitation: OrganizationInvitation }>(
     `/api/organizations/${encodeURIComponent(slug)}/invitations`,

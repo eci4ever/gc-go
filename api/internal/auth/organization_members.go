@@ -21,8 +21,9 @@ type organizationMemberRequest struct {
 }
 
 type organizationInvitationRequest struct {
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	Email  string `json:"email"`
+	Role   string `json:"role"`
+	TeamID string `json:"teamId"`
 }
 
 type acceptInvitationRequest struct {
@@ -188,6 +189,7 @@ func (h *Handler) adminInviteOrganizationMember(c fiber.Ctx) error {
 	}
 	request.Email = strings.ToLower(strings.TrimSpace(request.Email))
 	request.Role = strings.ToLower(strings.TrimSpace(request.Role))
+	request.TeamID = strings.TrimSpace(request.TeamID)
 	if !validEmail(request.Email) || !validOrganizationMemberRole(request.Role) {
 		return jsonError(c, fiber.StatusBadRequest, "Enter a valid email and role")
 	}
@@ -197,6 +199,19 @@ func (h *Handler) adminInviteOrganizationMember(c fiber.Ctx) error {
 	organization, err := h.queries.AdminGetOrganization(c.Context(), organizationID)
 	if err != nil || organization.DeletedAt.Valid {
 		return jsonError(c, fiber.StatusNotFound, "Organization not found")
+	}
+	var teamID pgtype.Text
+	if request.TeamID != "" {
+		team, teamErr := h.queries.GetOrganizationTeam(c.Context(), db.GetOrganizationTeamParams{
+			ID: request.TeamID, OrganizationID: organizationID,
+		})
+		if teamErr != nil {
+			return jsonError(c, fiber.StatusBadRequest, "Select a valid organization team")
+		}
+		if team.ArchivedAt.Valid {
+			return jsonError(c, fiber.StatusConflict, "Restore the team before inviting members")
+		}
+		teamID = textValue(team.ID)
 	}
 
 	rawToken, tokenHash, err := newSessionToken()
@@ -218,13 +233,16 @@ func (h *Handler) adminInviteOrganizationMember(c fiber.Ctx) error {
 	}
 	defer transaction.Rollback(c.Context())
 	queries := h.queries.WithTx(transaction)
-	if err := queries.AdminDeletePendingOrganizationInvitations(
+	if _, err := queries.GetPendingOrganizationInvitation(
 		c.Context(),
-		db.AdminDeletePendingOrganizationInvitationsParams{
+		db.GetPendingOrganizationInvitationParams{
 			OrganizationID: organizationID,
 			Email:          request.Email,
+			TeamID:         teamID,
 		},
-	); err != nil {
+	); err == nil {
+		return jsonError(c, fiber.StatusConflict, "A pending invitation already exists")
+	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to send invitation")
 	}
 	invitation, err := queries.AdminCreateOrganizationInvitation(
@@ -238,6 +256,7 @@ func (h *Handler) adminInviteOrganizationMember(c fiber.Ctx) error {
 			InviterID:      admin.UserID,
 			Token:          textValue(tokenHash),
 			InvitedUserID:  invitedUserID,
+			TeamID:         teamID,
 		},
 	)
 	if err != nil {
@@ -267,7 +286,10 @@ func (h *Handler) adminInviteOrganizationMember(c fiber.Ctx) error {
 		)
 		return jsonError(c, fiber.StatusBadGateway, "Unable to send invitation")
 	}
-	h.recordAdminAudit(c, admin.UserID, "admin_organization_invitation_sent", "organization", organizationID, "", nil, invitation)
+	h.recordAdminAudit(c, admin.UserID, "admin_organization_invitation_sent", "organization", organizationID, "", nil, fiber.Map{
+		"id": invitation.ID, "email": invitation.Email, "role": invitation.Role,
+		"teamId": invitation.TeamID,
+	})
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"invitation": invitation})
 }
 
@@ -313,14 +335,23 @@ func (h *Handler) acceptOrganizationInvitation(c fiber.Ctx) error {
 	}
 	defer transaction.Rollback(c.Context())
 	queries := h.queries.WithTx(transaction)
-	invitation, err := queries.GetActiveOrganizationInvitation(
+	invitation, err := queries.GetOrganizationInvitationForAcceptance(
 		c.Context(),
-		db.GetActiveOrganizationInvitationParams{
+		db.GetOrganizationInvitationForAcceptanceParams{
 			Token: hashToken(request.Token),
 			Email: current.UserEmail,
 		},
 	)
 	if err != nil {
+		return jsonError(c, fiber.StatusBadRequest, "Invitation is invalid, expired, or belongs to another email")
+	}
+	if invitation.Status == "accepted" && invitation.InvitedUserID.String == current.UserID {
+		return c.JSON(fiber.Map{
+			"organizationId":   invitation.OrganizationID,
+			"organizationName": invitation.OrganizationName,
+		})
+	}
+	if invitation.Status != "pending" || invitation.ExpiresAt.Time.Before(time.Now().UTC()) {
 		return jsonError(c, fiber.StatusBadRequest, "Invitation is invalid, expired, or belongs to another email")
 	}
 	memberID, err := randomValue(18)
@@ -341,6 +372,24 @@ func (h *Handler) acceptOrganizationInvitation(c fiber.Ctx) error {
 		},
 	); err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to accept invitation")
+	}
+	if invitation.TeamID.Valid {
+		team, teamErr := queries.GetOrganizationTeam(c.Context(), db.GetOrganizationTeamParams{
+			ID: invitation.TeamID.String, OrganizationID: invitation.OrganizationID,
+		})
+		if teamErr != nil || team.ArchivedAt.Valid {
+			return jsonError(c, fiber.StatusConflict, "Invitation team is no longer available")
+		}
+		teamMemberID, idErr := randomValue(18)
+		if idErr != nil {
+			return jsonError(c, fiber.StatusInternalServerError, "Unable to accept invitation")
+		}
+		if _, teamErr = queries.AddOrganizationTeamMember(c.Context(), db.AddOrganizationTeamMemberParams{
+			ID: teamMemberID, TeamID: team.ID, UserID: current.UserID,
+			OrganizationID: invitation.OrganizationID,
+		}); teamErr != nil {
+			return jsonError(c, fiber.StatusInternalServerError, "Unable to accept invitation")
+		}
 	}
 	if err := queries.AcceptOrganizationInvitation(
 		c.Context(),

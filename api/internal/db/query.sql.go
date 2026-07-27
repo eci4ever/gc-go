@@ -276,7 +276,8 @@ INSERT INTO invitations (
     expires_at,
     inviter_id,
     token,
-    invited_user_id
+    invited_user_id,
+    team_id
 ) VALUES (
     $1,
     $2,
@@ -286,7 +287,8 @@ INSERT INTO invitations (
     $5,
     $6,
     $7,
-    $8
+    $8,
+    $9
 )
 RETURNING id, organization_id, email, role, team_id, status, expires_at, created_at, inviter_id, token, invited_user_id, accepted_at
 `
@@ -300,6 +302,7 @@ type AdminCreateOrganizationInvitationParams struct {
 	InviterID      string           `json:"inviterId"`
 	Token          pgtype.Text      `json:"token"`
 	InvitedUserID  pgtype.Text      `json:"invitedUserId"`
+	TeamID         pgtype.Text      `json:"teamId"`
 }
 
 func (q *Queries) AdminCreateOrganizationInvitation(ctx context.Context, arg AdminCreateOrganizationInvitationParams) (Invitation, error) {
@@ -312,6 +315,7 @@ func (q *Queries) AdminCreateOrganizationInvitation(ctx context.Context, arg Adm
 		arg.InviterID,
 		arg.Token,
 		arg.InvitedUserID,
+		arg.TeamID,
 	)
 	var i Invitation
 	err := row.Scan(
@@ -448,23 +452,6 @@ func (q *Queries) AdminDeleteOrganizationMember(ctx context.Context, arg AdminDe
 		&i.CreatedAt,
 	)
 	return i, err
-}
-
-const adminDeletePendingOrganizationInvitations = `-- name: AdminDeletePendingOrganizationInvitations :exec
-DELETE FROM invitations
-WHERE organization_id = $1
-  AND lower(email) = lower($2::text)
-  AND status = 'pending'
-`
-
-type AdminDeletePendingOrganizationInvitationsParams struct {
-	OrganizationID string `json:"organizationId"`
-	Email          string `json:"email"`
-}
-
-func (q *Queries) AdminDeletePendingOrganizationInvitations(ctx context.Context, arg AdminDeletePendingOrganizationInvitationsParams) error {
-	_, err := q.db.Exec(ctx, adminDeletePendingOrganizationInvitations, arg.OrganizationID, arg.Email)
-	return err
 }
 
 const adminDemoteOrganizationOwners = `-- name: AdminDemoteOrganizationOwners :exec
@@ -645,8 +632,11 @@ SELECT
     invitations.status,
     invitations.expires_at,
     invitations.created_at,
-    invitations.invited_user_id
+    invitations.invited_user_id,
+    invitations.team_id,
+    teams.name AS team_name
 FROM invitations
+LEFT JOIN teams ON teams.id = invitations.team_id
 WHERE invitations.organization_id = $1
 ORDER BY invitations.created_at DESC
 `
@@ -659,6 +649,8 @@ type AdminListOrganizationInvitationsRow struct {
 	ExpiresAt     pgtype.Timestamp `json:"expiresAt"`
 	CreatedAt     pgtype.Timestamp `json:"createdAt"`
 	InvitedUserID pgtype.Text      `json:"invitedUserId"`
+	TeamID        pgtype.Text      `json:"teamId"`
+	TeamName      pgtype.Text      `json:"teamName"`
 }
 
 func (q *Queries) AdminListOrganizationInvitations(ctx context.Context, organizationID string) ([]AdminListOrganizationInvitationsRow, error) {
@@ -678,6 +670,8 @@ func (q *Queries) AdminListOrganizationInvitations(ctx context.Context, organiza
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.InvitedUserID,
+			&i.TeamID,
+			&i.TeamName,
 		); err != nil {
 			return nil, err
 		}
@@ -2056,47 +2050,6 @@ func (q *Queries) GetActiveEmailVerification(ctx context.Context, value string) 
 	return i, err
 }
 
-const getActiveOrganizationInvitation = `-- name: GetActiveOrganizationInvitation :one
-SELECT
-    invitations.id,
-    invitations.organization_id,
-    invitations.role,
-    organizations.name AS organization_name
-FROM invitations
-JOIN organizations ON organizations.id = invitations.organization_id
-WHERE invitations.token = $1::text
-  AND lower(invitations.email) = lower($2::text)
-  AND invitations.status = 'pending'
-  AND invitations.expires_at > (now() AT TIME ZONE 'UTC')
-  AND organizations.deleted_at IS NULL
-LIMIT 1
-FOR UPDATE
-`
-
-type GetActiveOrganizationInvitationParams struct {
-	Token string `json:"token"`
-	Email string `json:"email"`
-}
-
-type GetActiveOrganizationInvitationRow struct {
-	ID               string      `json:"id"`
-	OrganizationID   string      `json:"organizationId"`
-	Role             pgtype.Text `json:"role"`
-	OrganizationName string      `json:"organizationName"`
-}
-
-func (q *Queries) GetActiveOrganizationInvitation(ctx context.Context, arg GetActiveOrganizationInvitationParams) (GetActiveOrganizationInvitationRow, error) {
-	row := q.db.QueryRow(ctx, getActiveOrganizationInvitation, arg.Token, arg.Email)
-	var i GetActiveOrganizationInvitationRow
-	err := row.Scan(
-		&i.ID,
-		&i.OrganizationID,
-		&i.Role,
-		&i.OrganizationName,
-	)
-	return i, err
-}
-
 const getActivePasswordReset = `-- name: GetActivePasswordReset :one
 SELECT
     verifications.id,
@@ -2197,6 +2150,57 @@ func (q *Queries) GetCredentialUserByEmail(ctx context.Context, lower string) (G
 		&i.BanExpires,
 		&i.Password,
 		&i.TwoFactorEnabled,
+	)
+	return i, err
+}
+
+const getOrganizationInvitationForAcceptance = `-- name: GetOrganizationInvitationForAcceptance :one
+SELECT
+    invitations.id,
+    invitations.organization_id,
+    invitations.role,
+    invitations.team_id,
+    invitations.status,
+    invitations.expires_at,
+    invitations.invited_user_id,
+    organizations.name AS organization_name
+FROM invitations
+JOIN organizations ON organizations.id = invitations.organization_id
+WHERE invitations.token = $1::text
+  AND lower(invitations.email) = lower($2::text)
+  AND organizations.deleted_at IS NULL
+LIMIT 1
+FOR UPDATE
+`
+
+type GetOrganizationInvitationForAcceptanceParams struct {
+	Token string `json:"token"`
+	Email string `json:"email"`
+}
+
+type GetOrganizationInvitationForAcceptanceRow struct {
+	ID               string           `json:"id"`
+	OrganizationID   string           `json:"organizationId"`
+	Role             pgtype.Text      `json:"role"`
+	TeamID           pgtype.Text      `json:"teamId"`
+	Status           string           `json:"status"`
+	ExpiresAt        pgtype.Timestamp `json:"expiresAt"`
+	InvitedUserID    pgtype.Text      `json:"invitedUserId"`
+	OrganizationName string           `json:"organizationName"`
+}
+
+func (q *Queries) GetOrganizationInvitationForAcceptance(ctx context.Context, arg GetOrganizationInvitationForAcceptanceParams) (GetOrganizationInvitationForAcceptanceRow, error) {
+	row := q.db.QueryRow(ctx, getOrganizationInvitationForAcceptance, arg.Token, arg.Email)
+	var i GetOrganizationInvitationForAcceptanceRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Role,
+		&i.TeamID,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.InvitedUserID,
+		&i.OrganizationName,
 	)
 	return i, err
 }
@@ -2302,6 +2306,30 @@ func (q *Queries) GetPasswordResetUserByEmail(ctx context.Context, lower string)
 	var i GetPasswordResetUserByEmailRow
 	err := row.Scan(&i.ID, &i.Name, &i.Email)
 	return i, err
+}
+
+const getPendingOrganizationInvitation = `-- name: GetPendingOrganizationInvitation :one
+SELECT id
+FROM invitations
+WHERE organization_id = $1
+  AND lower(email) = lower($2::text)
+  AND team_id IS NOT DISTINCT FROM $3::text
+  AND status = 'pending'
+  AND expires_at > (now() AT TIME ZONE 'UTC')
+LIMIT 1
+`
+
+type GetPendingOrganizationInvitationParams struct {
+	OrganizationID string      `json:"organizationId"`
+	Email          string      `json:"email"`
+	TeamID         pgtype.Text `json:"teamId"`
+}
+
+func (q *Queries) GetPendingOrganizationInvitation(ctx context.Context, arg GetPendingOrganizationInvitationParams) (string, error) {
+	row := q.db.QueryRow(ctx, getPendingOrganizationInvitation, arg.OrganizationID, arg.Email, arg.TeamID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getRecentEmailVerification = `-- name: GetRecentEmailVerification :one
@@ -2583,10 +2611,14 @@ func (q *Queries) ListOrganizationAuditEvents(ctx context.Context, arg ListOrgan
 }
 
 const listOrganizationInvitations = `-- name: ListOrganizationInvitations :many
-SELECT id, email, role, status, expires_at, created_at, invited_user_id
+SELECT
+    invitations.id, invitations.email, invitations.role, invitations.status,
+    invitations.expires_at, invitations.created_at, invitations.invited_user_id,
+    invitations.team_id, teams.name AS team_name
 FROM invitations
-WHERE organization_id = $1
-ORDER BY created_at DESC
+LEFT JOIN teams ON teams.id = invitations.team_id
+WHERE invitations.organization_id = $1
+ORDER BY invitations.created_at DESC
 `
 
 type ListOrganizationInvitationsRow struct {
@@ -2597,6 +2629,8 @@ type ListOrganizationInvitationsRow struct {
 	ExpiresAt     pgtype.Timestamp `json:"expiresAt"`
 	CreatedAt     pgtype.Timestamp `json:"createdAt"`
 	InvitedUserID pgtype.Text      `json:"invitedUserId"`
+	TeamID        pgtype.Text      `json:"teamId"`
+	TeamName      pgtype.Text      `json:"teamName"`
 }
 
 func (q *Queries) ListOrganizationInvitations(ctx context.Context, organizationID string) ([]ListOrganizationInvitationsRow, error) {
@@ -2616,6 +2650,8 @@ func (q *Queries) ListOrganizationInvitations(ctx context.Context, organizationI
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.InvitedUserID,
+			&i.TeamID,
+			&i.TeamName,
 		); err != nil {
 			return nil, err
 		}

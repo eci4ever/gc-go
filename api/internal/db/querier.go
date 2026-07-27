@@ -24,7 +24,6 @@ type Querier interface {
 	AdminCreateUser(ctx context.Context, arg AdminCreateUserParams) (User, error)
 	AdminDashboardMetrics(ctx context.Context) (AdminDashboardMetricsRow, error)
 	AdminDeleteOrganizationMember(ctx context.Context, arg AdminDeleteOrganizationMemberParams) (Member, error)
-	AdminDeletePendingOrganizationInvitations(ctx context.Context, arg AdminDeletePendingOrganizationInvitationsParams) error
 	AdminDemoteOrganizationOwners(ctx context.Context, organizationID string) error
 	AdminGetOrganization(ctx context.Context, id string) (Organization, error)
 	AdminGetOrganizationMember(ctx context.Context, arg AdminGetOrganizationMemberParams) (Member, error)
@@ -73,13 +72,14 @@ type Querier interface {
 	DeleteUserEmailVerifications(ctx context.Context, identifier string) error
 	EnableTwoFactor(ctx context.Context, arg EnableTwoFactorParams) error
 	GetActiveEmailVerification(ctx context.Context, value string) (GetActiveEmailVerificationRow, error)
-	GetActiveOrganizationInvitation(ctx context.Context, arg GetActiveOrganizationInvitationParams) (GetActiveOrganizationInvitationRow, error)
 	GetActivePasswordReset(ctx context.Context, value string) (GetActivePasswordResetRow, error)
 	GetCredentialPasswordByUserID(ctx context.Context, userID string) (pgtype.Text, error)
 	GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error)
+	GetOrganizationInvitationForAcceptance(ctx context.Context, arg GetOrganizationInvitationForAcceptanceParams) (GetOrganizationInvitationForAcceptanceRow, error)
 	GetOrganizationMembership(ctx context.Context, arg GetOrganizationMembershipParams) (GetOrganizationMembershipRow, error)
 	GetOrganizationTeam(ctx context.Context, arg GetOrganizationTeamParams) (Team, error)
 	GetPasswordResetUserByEmail(ctx context.Context, lower string) (GetPasswordResetUserByEmailRow, error)
+	GetPendingOrganizationInvitation(ctx context.Context, arg GetPendingOrganizationInvitationParams) (string, error)
 	GetRecentEmailVerification(ctx context.Context, identifier string) (pgtype.Timestamp, error)
 	GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error)
 	GetTwoFactorByUserID(ctx context.Context, userID string) (TwoFactor, error)

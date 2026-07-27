@@ -291,11 +291,25 @@ func (h *Handler) inviteOrganizationWorkspaceMember(c fiber.Ctx) error {
 	}
 	request.Email = strings.ToLower(strings.TrimSpace(request.Email))
 	request.Role = strings.ToLower(strings.TrimSpace(request.Role))
+	request.TeamID = strings.TrimSpace(request.TeamID)
 	if !validEmail(request.Email) || !validOrganizationMemberRole(request.Role) {
 		return jsonError(c, fiber.StatusBadRequest, "Enter a valid email and role")
 	}
 	if access.Org.Role == "admin" && request.Role != "member" {
 		return jsonError(c, fiber.StatusForbidden, "Organization admins can only invite members")
+	}
+	var teamID pgtype.Text
+	if request.TeamID != "" {
+		team, teamErr := h.queries.GetOrganizationTeam(c.Context(), db.GetOrganizationTeamParams{
+			ID: request.TeamID, OrganizationID: access.Org.ID,
+		})
+		if teamErr != nil {
+			return jsonError(c, fiber.StatusBadRequest, "Select a valid organization team")
+		}
+		if team.ArchivedAt.Valid {
+			return jsonError(c, fiber.StatusConflict, "Restore the team before inviting members")
+		}
+		teamID = textValue(team.ID)
 	}
 	if h.emailSender == nil {
 		return jsonError(c, fiber.StatusServiceUnavailable, "Email delivery is not configured")
@@ -318,15 +332,18 @@ func (h *Handler) inviteOrganizationWorkspaceMember(c fiber.Ctx) error {
 	}
 	defer tx.Rollback(c.Context())
 	queries := h.queries.WithTx(tx)
-	if err := queries.AdminDeletePendingOrganizationInvitations(c.Context(), db.AdminDeletePendingOrganizationInvitationsParams{
-		OrganizationID: access.Org.ID, Email: request.Email,
-	}); err != nil {
+	if _, duplicateErr := queries.GetPendingOrganizationInvitation(c.Context(), db.GetPendingOrganizationInvitationParams{
+		OrganizationID: access.Org.ID, Email: request.Email, TeamID: teamID,
+	}); duplicateErr == nil {
+		return jsonError(c, fiber.StatusConflict, "A pending invitation already exists for this team")
+	} else if !errors.Is(duplicateErr, pgx.ErrNoRows) {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to send invitation")
 	}
 	invitation, err := queries.AdminCreateOrganizationInvitation(c.Context(), db.AdminCreateOrganizationInvitationParams{
 		ID: invitationID, OrganizationID: access.Org.ID, Email: request.Email,
 		Role: textValue(request.Role), ExpiresAt: timestampValue(time.Now().UTC().Add(7 * 24 * time.Hour)),
 		InviterID: access.Current.UserID, Token: textValue(tokenHash), InvitedUserID: invitedUserID,
+		TeamID: teamID,
 	})
 	if err != nil || tx.Commit(c.Context()) != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to send invitation")
@@ -338,7 +355,10 @@ func (h *Handler) inviteOrganizationWorkspaceMember(c fiber.Ctx) error {
 		})
 		return jsonError(c, fiber.StatusBadGateway, "Unable to send invitation")
 	}
-	h.recordOrganizationAudit(c, access, "organization_invitation_sent", "invitation", invitationID, "", nil, invitation)
+	h.recordOrganizationAudit(c, access, "organization_invitation_sent", "invitation", invitationID, "", nil, fiber.Map{
+		"id": invitation.ID, "email": invitation.Email, "role": invitation.Role,
+		"teamId": invitation.TeamID,
+	})
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"invitation": invitation})
 }
 

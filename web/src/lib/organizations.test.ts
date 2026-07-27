@@ -87,6 +87,7 @@ describe('organization workspace API client', () => {
     await inviteOrganizationMember('acme', {
       email: 'member@example.com',
       role: 'member',
+      teamId: 'team-1',
     })
     await updateOrganizationMember('acme', 'user-2', 'admin')
     await createOrganizationTeam('acme', {
@@ -100,7 +101,7 @@ describe('organization workspace API client', () => {
     })
 
     expect(requests).toEqual([
-      { email: 'member@example.com', role: 'member' },
+      { email: 'member@example.com', role: 'member', teamId: 'team-1' },
       { userId: 'user-2', body: { role: 'admin' } },
       {
         name: 'Operations',

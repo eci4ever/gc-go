@@ -691,16 +691,23 @@ SELECT
     invitations.status,
     invitations.expires_at,
     invitations.created_at,
-    invitations.invited_user_id
+    invitations.invited_user_id,
+    invitations.team_id,
+    teams.name AS team_name
 FROM invitations
+LEFT JOIN teams ON teams.id = invitations.team_id
 WHERE invitations.organization_id = $1
 ORDER BY invitations.created_at DESC;
 
--- name: AdminDeletePendingOrganizationInvitations :exec
-DELETE FROM invitations
+-- name: GetPendingOrganizationInvitation :one
+SELECT id
+FROM invitations
 WHERE organization_id = $1
   AND lower(email) = lower(sqlc.arg(email)::text)
-  AND status = 'pending';
+  AND team_id IS NOT DISTINCT FROM sqlc.narg(team_id)::text
+  AND status = 'pending'
+  AND expires_at > (now() AT TIME ZONE 'UTC')
+LIMIT 1;
 
 -- name: AdminCreateOrganizationInvitation :one
 INSERT INTO invitations (
@@ -712,7 +719,8 @@ INSERT INTO invitations (
     expires_at,
     inviter_id,
     token,
-    invited_user_id
+    invited_user_id,
+    team_id
 ) VALUES (
     $1,
     $2,
@@ -722,22 +730,25 @@ INSERT INTO invitations (
     $5,
     $6,
     $7,
-    $8
+    $8,
+    $9
 )
 RETURNING *;
 
--- name: GetActiveOrganizationInvitation :one
+-- name: GetOrganizationInvitationForAcceptance :one
 SELECT
     invitations.id,
     invitations.organization_id,
     invitations.role,
+    invitations.team_id,
+    invitations.status,
+    invitations.expires_at,
+    invitations.invited_user_id,
     organizations.name AS organization_name
 FROM invitations
 JOIN organizations ON organizations.id = invitations.organization_id
 WHERE invitations.token = sqlc.arg(token)::text
   AND lower(invitations.email) = lower(sqlc.arg(email)::text)
-  AND invitations.status = 'pending'
-  AND invitations.expires_at > (now() AT TIME ZONE 'UTC')
   AND organizations.deleted_at IS NULL
 LIMIT 1
 FOR UPDATE;
@@ -903,10 +914,14 @@ FROM members
 WHERE organization_id = $1 AND role = 'owner';
 
 -- name: ListOrganizationInvitations :many
-SELECT id, email, role, status, expires_at, created_at, invited_user_id
+SELECT
+    invitations.id, invitations.email, invitations.role, invitations.status,
+    invitations.expires_at, invitations.created_at, invitations.invited_user_id,
+    invitations.team_id, teams.name AS team_name
 FROM invitations
-WHERE organization_id = $1
-ORDER BY created_at DESC;
+LEFT JOIN teams ON teams.id = invitations.team_id
+WHERE invitations.organization_id = $1
+ORDER BY invitations.created_at DESC;
 
 -- name: UpdateOrganizationMemberRole :one
 UPDATE members SET role = $3

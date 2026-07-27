@@ -1338,6 +1338,182 @@ func TestAuthFlowIntegration(t *testing.T) {
 	restoreManagedUserResponse.Body.Close()
 }
 
+func TestTeamInvitationIntegration(t *testing.T) {
+	if os.Getenv("AUTH_INTEGRATION") != "1" {
+		t.Skip("set AUTH_INTEGRATION=1 to run against DATABASE_URL")
+	}
+	_ = godotenv.Load("../../../.env")
+	pool, err := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
+	if err != nil {
+		t.Fatalf("connect to database: %v", err)
+	}
+	defer pool.Close()
+
+	suffix, _ := randomValue(8)
+	ownerEmail := "team-owner-" + suffix + "@example.com"
+	memberEmail := "team-member-" + suffix + "@example.com"
+	rollbackEmail := "team-rollback-" + suffix + "@example.com"
+	orgID, _ := randomValue(18)
+	foreignOrgID, _ := randomValue(18)
+	teamID, _ := randomValue(18)
+	archivedTeamID, _ := randomValue(18)
+	foreignTeamID, _ := randomValue(18)
+	slug := "team-invite-" + strings.ToLower(suffix)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM organizations WHERE id IN ($1, $2)", orgID, foreignOrgID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE email IN ($1, $2, $3)", ownerEmail, memberEmail, rollbackEmail)
+	})
+
+	app := fiber.New()
+	handler := NewHandler(pool, db.New(pool), false)
+	emailSender := &verificationEmailRecorder{}
+	handler.ConfigureEmailVerification(emailSender, "https://example.com")
+	handler.Register(app.Group("/api/auth"))
+	handler.RegisterOrganizations(app.Group("/api/organizations"))
+
+	signup := func(email string) (userResponse, *http.Cookie) {
+		response := authRequest(t, app, http.MethodPost, "/api/auth/signup", map[string]string{
+			"name": email, "email": email, "password": "correct-horse-battery-staple",
+		}, nil)
+		if response.StatusCode != http.StatusCreated {
+			t.Fatalf("signup %s status = %d", email, response.StatusCode)
+		}
+		var body struct {
+			User userResponse `json:"user"`
+		}
+		cookies := response.Cookies()
+		decodeResponse(t, response, &body)
+		return body.User, cookies[0]
+	}
+	owner, ownerCookie := signup(ownerEmail)
+	member, memberCookie := signup(memberEmail)
+	rollbackUser, rollbackCookie := signup(rollbackEmail)
+
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO organizations (id, name, slug) VALUES ($1, 'Team Invite Org', $2), ($3, 'Foreign Org', $4)",
+		orgID, slug, foreignOrgID, slug+"-foreign",
+	); err != nil {
+		t.Fatalf("seed team invitation fixtures: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO members (id, organization_id, user_id, role) VALUES ($1, $2, $3, 'owner'), ($4, $2, $5, 'member')",
+		"owner-"+suffix, orgID, owner.ID, "member-"+suffix, member.ID,
+	); err != nil {
+		t.Fatalf("seed team invitation members: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(),
+		"INSERT INTO teams (id, name, organization_id) VALUES ($1, 'Active Team', $2), ($3, 'Archived Team', $2), ($4, 'Foreign Team', $5)",
+		teamID, orgID, archivedTeamID, foreignTeamID, foreignOrgID,
+	); err != nil {
+		t.Fatalf("seed team invitation teams: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(),
+		"UPDATE teams SET archived_at = (now() AT TIME ZONE 'UTC') WHERE id = $1", archivedTeamID,
+	); err != nil {
+		t.Fatalf("archive team invitation fixture: %v", err)
+	}
+
+	invitePath := "/api/organizations/" + slug + "/invitations"
+	memberInvite := authRequest(t, app, http.MethodPost, invitePath, map[string]any{
+		"email": rollbackEmail, "role": "member", "teamId": teamID,
+	}, memberCookie)
+	if memberInvite.StatusCode != http.StatusForbidden {
+		t.Fatalf("member invite status = %d, want %d", memberInvite.StatusCode, http.StatusForbidden)
+	}
+	memberInvite.Body.Close()
+
+	for label, invalidTeamID := range map[string]struct {
+		id   string
+		code int
+	}{
+		"foreign":  {foreignTeamID, http.StatusBadRequest},
+		"archived": {archivedTeamID, http.StatusConflict},
+	} {
+		response := authRequest(t, app, http.MethodPost, invitePath, map[string]any{
+			"email": memberEmail, "role": "member", "teamId": invalidTeamID.id,
+		}, ownerCookie)
+		if response.StatusCode != invalidTeamID.code {
+			t.Fatalf("%s team invite status = %d, want %d", label, response.StatusCode, invalidTeamID.code)
+		}
+		response.Body.Close()
+	}
+
+	validInvite := authRequest(t, app, http.MethodPost, invitePath, map[string]any{
+		"email": memberEmail, "role": "admin", "teamId": teamID,
+	}, ownerCookie)
+	if validInvite.StatusCode != http.StatusCreated {
+		t.Fatalf("valid team invite status = %d, want %d", validInvite.StatusCode, http.StatusCreated)
+	}
+	validInvite.Body.Close()
+	validURL, _ := url.Parse(emailSender.invitationURL)
+	validToken := validURL.Query().Get("token")
+
+	duplicate := authRequest(t, app, http.MethodPost, invitePath, map[string]any{
+		"email": memberEmail, "role": "admin", "teamId": teamID,
+	}, ownerCookie)
+	if duplicate.StatusCode != http.StatusConflict {
+		t.Fatalf("duplicate team invite status = %d, want %d", duplicate.StatusCode, http.StatusConflict)
+	}
+	duplicate.Body.Close()
+
+	accept := func(token string, cookie *http.Cookie) int {
+		response := authRequest(t, app, http.MethodPost, "/api/auth/invitations/accept", map[string]any{"token": token}, cookie)
+		defer response.Body.Close()
+		return response.StatusCode
+	}
+	if status := accept(validToken, memberCookie); status != http.StatusOK {
+		t.Fatalf("team invitation accept status = %d, want %d", status, http.StatusOK)
+	}
+	if status := accept(validToken, memberCookie); status != http.StatusOK {
+		t.Fatalf("team invitation replay status = %d, want %d", status, http.StatusOK)
+	}
+	var organizationMemberships, teamMemberships int
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM members WHERE organization_id = $1 AND user_id = $2", orgID, member.ID).Scan(&organizationMemberships); err != nil {
+		t.Fatalf("count organization memberships: %v", err)
+	}
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM team_members WHERE team_id = $1 AND user_id = $2", teamID, member.ID).Scan(&teamMemberships); err != nil {
+		t.Fatalf("count team memberships: %v", err)
+	}
+	if organizationMemberships != 1 || teamMemberships != 1 {
+		t.Fatalf("accepted membership counts = organization %d team %d, want 1 and 1", organizationMemberships, teamMemberships)
+	}
+
+	rollbackInvite := authRequest(t, app, http.MethodPost, invitePath, map[string]any{
+		"email": rollbackEmail, "role": "member", "teamId": teamID,
+	}, ownerCookie)
+	if rollbackInvite.StatusCode != http.StatusCreated {
+		t.Fatalf("rollback invite status = %d, want %d", rollbackInvite.StatusCode, http.StatusCreated)
+	}
+	rollbackInvite.Body.Close()
+	rollbackURL, _ := url.Parse(emailSender.invitationURL)
+	if _, err := pool.Exec(context.Background(), "UPDATE teams SET archived_at = (now() AT TIME ZONE 'UTC') WHERE id = $1", teamID); err != nil {
+		t.Fatalf("archive invited team: %v", err)
+	}
+	if status := accept(rollbackURL.Query().Get("token"), rollbackCookie); status != http.StatusConflict {
+		t.Fatalf("invalid team acceptance status = %d, want %d", status, http.StatusConflict)
+	}
+	if err := pool.QueryRow(context.Background(), "SELECT count(*) FROM members WHERE organization_id = $1 AND user_id = $2", orgID, rollbackUser.ID).Scan(&organizationMemberships); err != nil {
+		t.Fatalf("count rolled back membership: %v", err)
+	}
+	if organizationMemberships != 0 {
+		t.Fatalf("invalid team acceptance created %d organization memberships", organizationMemberships)
+	}
+
+	var leakedTokens int
+	if err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM auth_events
+		WHERE event_type = 'organization_invitation_sent'
+		  AND organization_id = $1
+		  AND (coalesce(after_state::text, '') LIKE '%token%' OR coalesce(before_state::text, '') LIKE '%token%')`,
+		orgID,
+	).Scan(&leakedTokens); err != nil {
+		t.Fatalf("inspect invitation audit state: %v", err)
+	}
+	if leakedTokens != 0 {
+		t.Fatalf("invitation audit state leaked %d token fields", leakedTokens)
+	}
+}
+
 type verificationEmailRecorder struct {
 	to              string
 	verificationURL string
