@@ -233,7 +233,7 @@ INSERT INTO organizations (
     (now() AT TIME ZONE 'UTC'),
     $5
 )
-RETURNING id, name, slug, logo, created_at, metadata, deleted_at, updated_at
+RETURNING id, name, slug, logo, created_at, updated_at, metadata, deleted_at
 `
 
 type AdminCreateOrganizationParams struct {
@@ -259,9 +259,9 @@ func (q *Queries) AdminCreateOrganization(ctx context.Context, arg AdminCreateOr
 		&i.Slug,
 		&i.Logo,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 		&i.Metadata,
 		&i.DeletedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -480,7 +480,7 @@ func (q *Queries) AdminDemoteOrganizationOwners(ctx context.Context, organizatio
 }
 
 const adminGetOrganization = `-- name: AdminGetOrganization :one
-SELECT id, name, slug, logo, created_at, metadata, deleted_at, updated_at
+SELECT id, name, slug, logo, created_at, updated_at, metadata, deleted_at
 FROM organizations
 WHERE id = $1
 `
@@ -494,9 +494,9 @@ func (q *Queries) AdminGetOrganization(ctx context.Context, id string) (Organiza
 		&i.Slug,
 		&i.Logo,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 		&i.Metadata,
 		&i.DeletedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -716,7 +716,7 @@ type AdminListOrganizationMembersRow struct {
 	Name      string           `json:"name"`
 	Email     string           `json:"email"`
 	Image     pgtype.Text      `json:"image"`
-	Banned    pgtype.Bool      `json:"banned"`
+	Banned    bool             `json:"banned"`
 	DeletedAt pgtype.Timestamp `json:"deletedAt"`
 }
 
@@ -973,7 +973,7 @@ UPDATE organizations
 SET deleted_at = NULL
 WHERE id = $1
   AND deleted_at IS NOT NULL
-RETURNING id, name, slug, logo, created_at, metadata, deleted_at, updated_at
+RETURNING id, name, slug, logo, created_at, updated_at, metadata, deleted_at
 `
 
 func (q *Queries) AdminRestoreOrganization(ctx context.Context, id string) (Organization, error) {
@@ -985,9 +985,9 @@ func (q *Queries) AdminRestoreOrganization(ctx context.Context, id string) (Orga
 		&i.Slug,
 		&i.Logo,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 		&i.Metadata,
 		&i.DeletedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1033,7 +1033,7 @@ RETURNING id, name, email, email_verified, image, created_at, updated_at, role, 
 
 type AdminSetUserBanParams struct {
 	ID         string           `json:"id"`
-	Banned     pgtype.Bool      `json:"banned"`
+	Banned     bool             `json:"banned"`
 	BanReason  pgtype.Text      `json:"banReason"`
 	BanExpires pgtype.Timestamp `json:"banExpires"`
 }
@@ -1068,7 +1068,7 @@ UPDATE organizations
 SET deleted_at = (now() AT TIME ZONE 'UTC')
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, name, slug, logo, created_at, metadata, deleted_at, updated_at
+RETURNING id, name, slug, logo, created_at, updated_at, metadata, deleted_at
 `
 
 func (q *Queries) AdminSoftDeleteOrganization(ctx context.Context, id string) (Organization, error) {
@@ -1080,9 +1080,9 @@ func (q *Queries) AdminSoftDeleteOrganization(ctx context.Context, id string) (O
 		&i.Slug,
 		&i.Logo,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 		&i.Metadata,
 		&i.DeletedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1124,7 +1124,7 @@ SET
     metadata = $5
 WHERE id = $1
   AND deleted_at IS NULL
-RETURNING id, name, slug, logo, created_at, metadata, deleted_at, updated_at
+RETURNING id, name, slug, logo, created_at, updated_at, metadata, deleted_at
 `
 
 type AdminUpdateOrganizationParams struct {
@@ -1150,9 +1150,9 @@ func (q *Queries) AdminUpdateOrganization(ctx context.Context, arg AdminUpdateOr
 		&i.Slug,
 		&i.Logo,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 		&i.Metadata,
 		&i.DeletedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1507,7 +1507,7 @@ INSERT INTO sessions (
     $7,
     $8
 )
-RETURNING id, expires_at, token, created_at, updated_at, ip_address, user_agent, user_id, impersonated_by, active_organization_id, active_team_id, impersonation_reason
+RETURNING id, expires_at, token, created_at, updated_at, ip_address, user_agent, user_id, impersonated_by, impersonation_reason, active_organization_id, active_team_id
 `
 
 type CreateImpersonatedSessionParams struct {
@@ -1543,9 +1543,9 @@ func (q *Queries) CreateImpersonatedSession(ctx context.Context, arg CreateImper
 		&i.UserAgent,
 		&i.UserID,
 		&i.ImpersonatedBy,
+		&i.ImpersonationReason,
 		&i.ActiveOrganizationID,
 		&i.ActiveTeamID,
-		&i.ImpersonationReason,
 	)
 	return i, err
 }
@@ -1646,7 +1646,7 @@ INSERT INTO sessions (
     $5,
     $6
 )
-RETURNING id, expires_at, token, created_at, updated_at, ip_address, user_agent, user_id, impersonated_by, active_organization_id, active_team_id, impersonation_reason
+RETURNING id, expires_at, token, created_at, updated_at, ip_address, user_agent, user_id, impersonated_by, impersonation_reason, active_organization_id, active_team_id
 `
 
 type CreateSessionParams struct {
@@ -1678,9 +1678,9 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.UserAgent,
 		&i.UserID,
 		&i.ImpersonatedBy,
+		&i.ImpersonationReason,
 		&i.ActiveOrganizationID,
 		&i.ActiveTeamID,
-		&i.ImpersonationReason,
 	)
 	return i, err
 }
@@ -2084,7 +2084,7 @@ type GetCredentialUserByEmailRow struct {
 	EmailVerified    bool             `json:"emailVerified"`
 	Image            pgtype.Text      `json:"image"`
 	Role             string           `json:"role"`
-	Banned           pgtype.Bool      `json:"banned"`
+	Banned           bool             `json:"banned"`
 	BanReason        pgtype.Text      `json:"banReason"`
 	BanExpires       pgtype.Timestamp `json:"banExpires"`
 	Password         pgtype.Text      `json:"password"`
@@ -3024,7 +3024,7 @@ const updateOrganizationWorkspace = `-- name: UpdateOrganizationWorkspace :one
 UPDATE organizations
 SET name = $2, slug = $3, logo = $4, metadata = $5
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, name, slug, logo, created_at, metadata, deleted_at, updated_at
+RETURNING id, name, slug, logo, created_at, updated_at, metadata, deleted_at
 `
 
 type UpdateOrganizationWorkspaceParams struct {
@@ -3050,9 +3050,9 @@ func (q *Queries) UpdateOrganizationWorkspace(ctx context.Context, arg UpdateOrg
 		&i.Slug,
 		&i.Logo,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 		&i.Metadata,
 		&i.DeletedAt,
-		&i.UpdatedAt,
 	)
 	return i, err
 }

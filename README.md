@@ -28,8 +28,19 @@ cd api
 sqlc generate
 ```
 
-SQL schema definitions belong in `api/db/schema.sql`; queries belong in
+The baseline schema belongs in
+`api/db/migrations/001_initial_schema.sql`; queries belong in
 `api/db/query.sql`; generated code is written to `api/internal/db`.
+
+The repository starts from one baseline migration. To intentionally delete all
+application data and rebuild the schema from that baseline:
+
+```sh
+cd api
+go run ./cmd/migrate --reset
+```
+
+The reset is destructive and is never run automatically during deployment.
 
 ## Production
 

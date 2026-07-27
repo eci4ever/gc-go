@@ -289,7 +289,7 @@ func (h *Handler) adminSetUserBan(c fiber.Ctx) error {
 	queries := h.queries.WithTx(transaction)
 	user, err := queries.AdminSetUserBan(c.Context(), db.AdminSetUserBanParams{
 		ID:         targetID,
-		Banned:     pgtype.Bool{Bool: request.Banned, Valid: true},
+		Banned:     request.Banned,
 		BanReason:  textValue(request.Reason),
 		BanExpires: expiresAt,
 	})

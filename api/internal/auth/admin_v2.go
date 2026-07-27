@@ -9,7 +9,6 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"gc-go/api/internal/db"
 )
@@ -89,7 +88,7 @@ func (h *Handler) adminBulkUsers(c fiber.Ctx) error {
 				c.Context(),
 				db.AdminSetUserBanParams{
 					ID:        userID,
-					Banned:    pgtype.Bool{Bool: banned, Valid: true},
+					Banned:    banned,
 					BanReason: textValue(request.Reason),
 				},
 			)

@@ -689,9 +689,8 @@ func timestampValue(value time.Time) pgtype.Timestamp {
 	return pgtype.Timestamp{Time: value, Valid: true}
 }
 
-func activeBan(banned pgtype.Bool, expiresAt pgtype.Timestamp) bool {
-	return banned.Valid &&
-		banned.Bool &&
+func activeBan(banned bool, expiresAt pgtype.Timestamp) bool {
+	return banned &&
 		(!expiresAt.Valid || expiresAt.Time.After(time.Now().UTC()))
 }
 

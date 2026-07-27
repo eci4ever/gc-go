@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -43,6 +44,13 @@ var applicationTables = []string{
 }
 
 func main() {
+	reset := flag.Bool(
+		"reset",
+		false,
+		"drop all application tables and rebuild the database from migrations",
+	)
+	flag.Parse()
+
 	if err := godotenv.Load(); err != nil && !os.IsNotExist(err) {
 		log.Fatalf("load environment: %v", err)
 	}
@@ -64,6 +72,11 @@ func main() {
 		log.Fatalf("connect to database: %v", err)
 	}
 	defer connection.Close(ctx)
+
+	if *reset {
+		resetDatabase(ctx, connection)
+		fmt.Printf("Reset database %q.\n", config.Database)
+	}
 
 	migrations, err := migrationFiles("db/migrations")
 	if err != nil {
@@ -120,6 +133,39 @@ func main() {
 
 	if appliedCount == 0 {
 		fmt.Println("Database is up to date.")
+	}
+}
+
+func resetDatabase(ctx context.Context, connection *pgx.Conn) {
+	transaction, err := connection.Begin(ctx)
+	if err != nil {
+		log.Fatalf("begin database reset: %v", err)
+	}
+	defer transaction.Rollback(ctx)
+
+	_, err = transaction.Exec(ctx, `
+		DROP TABLE IF EXISTS
+			auth_events,
+			invitations,
+			team_members,
+			members,
+			two_factor_challenges,
+			two_factors,
+			verifications,
+			accounts,
+			sessions,
+			teams,
+			organizations,
+			users,
+			schema_migrations
+		CASCADE;
+		DROP FUNCTION IF EXISTS set_updated_at() CASCADE;
+	`)
+	if err != nil {
+		log.Fatalf("reset database: %v", err)
+	}
+	if err := transaction.Commit(ctx); err != nil {
+		log.Fatalf("commit database reset: %v", err)
 	}
 }
 

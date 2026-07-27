@@ -30,13 +30,13 @@ type AuthEvent struct {
 	EventType      string           `json:"eventType"`
 	IpAddress      pgtype.Text      `json:"ipAddress"`
 	UserAgent      pgtype.Text      `json:"userAgent"`
-	CreatedAt      pgtype.Timestamp `json:"createdAt"`
 	TargetType     pgtype.Text      `json:"targetType"`
 	TargetID       pgtype.Text      `json:"targetId"`
 	Reason         pgtype.Text      `json:"reason"`
 	BeforeState    []byte           `json:"beforeState"`
 	AfterState     []byte           `json:"afterState"`
 	OrganizationID pgtype.Text      `json:"organizationId"`
+	CreatedAt      pgtype.Timestamp `json:"createdAt"`
 }
 
 type Invitation struct {
@@ -68,9 +68,9 @@ type Organization struct {
 	Slug      string           `json:"slug"`
 	Logo      pgtype.Text      `json:"logo"`
 	CreatedAt pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt pgtype.Timestamp `json:"updatedAt"`
 	Metadata  pgtype.Text      `json:"metadata"`
 	DeletedAt pgtype.Timestamp `json:"deletedAt"`
-	UpdatedAt pgtype.Timestamp `json:"updatedAt"`
 }
 
 type Session struct {
@@ -83,9 +83,9 @@ type Session struct {
 	UserAgent            pgtype.Text      `json:"userAgent"`
 	UserID               string           `json:"userId"`
 	ImpersonatedBy       pgtype.Text      `json:"impersonatedBy"`
+	ImpersonationReason  pgtype.Text      `json:"impersonationReason"`
 	ActiveOrganizationID pgtype.Text      `json:"activeOrganizationId"`
 	ActiveTeamID         pgtype.Text      `json:"activeTeamId"`
-	ImpersonationReason  pgtype.Text      `json:"impersonationReason"`
 }
 
 type Team struct {
@@ -133,7 +133,7 @@ type User struct {
 	CreatedAt     pgtype.Timestamp `json:"createdAt"`
 	UpdatedAt     pgtype.Timestamp `json:"updatedAt"`
 	Role          string           `json:"role"`
-	Banned        pgtype.Bool      `json:"banned"`
+	Banned        bool             `json:"banned"`
 	BanReason     pgtype.Text      `json:"banReason"`
 	BanExpires    pgtype.Timestamp `json:"banExpires"`
 	DeletedAt     pgtype.Timestamp `json:"deletedAt"`
