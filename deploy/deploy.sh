@@ -50,7 +50,7 @@ readonly compose=(
 "${compose[@]}" run --rm migrate
 "${compose[@]}" up -d --wait api web
 
-curl --fail --silent --show-error --retry 12 --retry-delay 5 \
+curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 \
   --noproxy "*" \
   --resolve vms.nimfi.dev:443:127.0.0.1 \
   https://vms.nimfi.dev/api/health >/dev/null
