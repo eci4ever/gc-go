@@ -39,7 +39,11 @@ unset registry_token
 trap 'sudo docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
 
 export IMAGE_TAG="$commit_sha"
-readonly compose=(sudo docker compose --env-file "$env_file" -f "$compose_file")
+readonly compose=(
+  sudo --preserve-env=IMAGE_TAG docker compose
+  --env-file "$env_file"
+  -f "$compose_file"
+)
 
 "${compose[@]}" pull
 "${compose[@]}" up -d --wait postgres
