@@ -2954,6 +2954,21 @@ func (q *Queries) ListUserSessions(ctx context.Context, arg ListUserSessionsPara
 	return items, nil
 }
 
+const lockOrganizationForInvitation = `-- name: LockOrganizationForInvitation :one
+SELECT id
+FROM organizations
+WHERE id = $1
+  AND deleted_at IS NULL
+FOR UPDATE
+`
+
+func (q *Queries) LockOrganizationForInvitation(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, lockOrganizationForInvitation, id)
+	var id_2 string
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const markUserEmailVerified = `-- name: MarkUserEmailVerified :exec
 UPDATE users
 SET email_verified = TRUE

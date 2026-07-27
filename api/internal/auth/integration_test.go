@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -295,16 +296,17 @@ func TestAuthFlowIntegration(t *testing.T) {
 		t.Fatal("dashboard summary did not return the expected security data")
 	}
 
-	if emailSender.verificationURL == "" ||
-		!strings.EqualFold(emailSender.to, email) {
+	emailTo, verificationEmailURL, _, _ := emailSender.snapshot()
+	if verificationEmailURL == "" ||
+		!strings.EqualFold(emailTo, email) {
 		t.Fatalf(
 			"signup verification email = (%q, %q), want recipient %q",
-			emailSender.to,
-			emailSender.verificationURL,
+			emailTo,
+			verificationEmailURL,
 			email,
 		)
 	}
-	verificationURL, err := url.Parse(emailSender.verificationURL)
+	verificationURL, err := url.Parse(verificationEmailURL)
 	if err != nil {
 		t.Fatalf("parse email verification URL: %v", err)
 	}
@@ -612,7 +614,8 @@ func TestAuthFlowIntegration(t *testing.T) {
 		)
 	}
 	forgotPasswordResponse.Body.Close()
-	passwordResetURL, err := url.Parse(emailSender.resetURL)
+	_, _, resetURL, _ := emailSender.snapshot()
+	passwordResetURL, err := url.Parse(resetURL)
 	if err != nil || passwordResetURL.Query().Get("token") == "" {
 		t.Fatalf("password reset email did not contain a valid link: %v", err)
 	}
@@ -808,7 +811,8 @@ func TestAuthFlowIntegration(t *testing.T) {
 		t.Fatalf("organization invite status = %d, want %d", inviteResponse.StatusCode, http.StatusCreated)
 	}
 	inviteResponse.Body.Close()
-	invitationURL, err := url.Parse(emailSender.invitationURL)
+	_, _, _, recordedInvitationURL := emailSender.snapshot()
+	invitationURL, err := url.Parse(recordedInvitationURL)
 	if err != nil || invitationURL.Query().Get("token") == "" {
 		t.Fatalf("organization invitation did not contain a valid link: %v", err)
 	}
@@ -1438,6 +1442,53 @@ func TestTeamInvitationIntegration(t *testing.T) {
 		response.Body.Close()
 	}
 
+	concurrentEmail := "team-concurrent-" + suffix + "@example.com"
+	payload, err := json.Marshal(map[string]any{
+		"email": concurrentEmail, "role": "member", "teamId": teamID,
+	})
+	if err != nil {
+		t.Fatalf("encode concurrent invitation: %v", err)
+	}
+	statuses := make(chan int, 2)
+	var invitations sync.WaitGroup
+	invitations.Add(2)
+	for range 2 {
+		go func() {
+			defer invitations.Done()
+			request := httptest.NewRequest(http.MethodPost, invitePath, bytes.NewReader(payload))
+			request.Header.Set("Content-Type", "application/json")
+			request.AddCookie(ownerCookie)
+			response, requestErr := app.Test(request)
+			if requestErr != nil {
+				statuses <- 0
+				return
+			}
+			response.Body.Close()
+			statuses <- response.StatusCode
+		}()
+	}
+	invitations.Wait()
+	close(statuses)
+	statusCounts := map[int]int{}
+	for status := range statuses {
+		statusCounts[status]++
+	}
+	if statusCounts[http.StatusCreated] != 1 || statusCounts[http.StatusConflict] != 1 {
+		t.Fatalf("concurrent invitation statuses = %v, want one 201 and one 409", statusCounts)
+	}
+	var livePending int
+	if err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM invitations
+		WHERE organization_id = $1 AND lower(email) = lower($2) AND team_id = $3
+		  AND status = 'pending' AND expires_at > (now() AT TIME ZONE 'UTC')`,
+		orgID, concurrentEmail, teamID,
+	).Scan(&livePending); err != nil {
+		t.Fatalf("count concurrent invitations: %v", err)
+	}
+	if livePending != 1 {
+		t.Fatalf("concurrent requests created %d live pending invitations, want 1", livePending)
+	}
+
 	validInvite := authRequest(t, app, http.MethodPost, invitePath, map[string]any{
 		"email": memberEmail, "role": "admin", "teamId": teamID,
 	}, ownerCookie)
@@ -1445,7 +1496,8 @@ func TestTeamInvitationIntegration(t *testing.T) {
 		t.Fatalf("valid team invite status = %d, want %d", validInvite.StatusCode, http.StatusCreated)
 	}
 	validInvite.Body.Close()
-	validURL, _ := url.Parse(emailSender.invitationURL)
+	_, _, _, recordedInvitationURL := emailSender.snapshot()
+	validURL, _ := url.Parse(recordedInvitationURL)
 	validToken := validURL.Query().Get("token")
 
 	duplicate := authRequest(t, app, http.MethodPost, invitePath, map[string]any{
@@ -1485,7 +1537,8 @@ func TestTeamInvitationIntegration(t *testing.T) {
 		t.Fatalf("rollback invite status = %d, want %d", rollbackInvite.StatusCode, http.StatusCreated)
 	}
 	rollbackInvite.Body.Close()
-	rollbackURL, _ := url.Parse(emailSender.invitationURL)
+	_, _, _, recordedInvitationURL = emailSender.snapshot()
+	rollbackURL, _ := url.Parse(recordedInvitationURL)
 	if _, err := pool.Exec(context.Background(), "UPDATE teams SET archived_at = (now() AT TIME ZONE 'UTC') WHERE id = $1", teamID); err != nil {
 		t.Fatalf("archive invited team: %v", err)
 	}
@@ -1515,6 +1568,7 @@ func TestTeamInvitationIntegration(t *testing.T) {
 }
 
 type verificationEmailRecorder struct {
+	mu              sync.Mutex
 	to              string
 	verificationURL string
 	resetURL        string
@@ -1527,6 +1581,8 @@ func (r *verificationEmailRecorder) SendPasswordReset(
 	_ string,
 	resetURL string,
 ) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.to = to
 	r.resetURL = resetURL
 	return nil
@@ -1538,6 +1594,8 @@ func (r *verificationEmailRecorder) SendOrganizationInvitation(
 	_ string,
 	invitationURL string,
 ) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.invitationURL = invitationURL
 	return nil
 }
@@ -1548,9 +1606,17 @@ func (r *verificationEmailRecorder) SendVerification(
 	_ string,
 	verificationURL string,
 ) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.to = to
 	r.verificationURL = verificationURL
 	return nil
+}
+
+func (r *verificationEmailRecorder) snapshot() (string, string, string, string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.to, r.verificationURL, r.resetURL, r.invitationURL
 }
 
 func authRequest(

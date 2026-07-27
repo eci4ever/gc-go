@@ -92,6 +92,7 @@ type Querier interface {
 	ListOrganizationTeams(ctx context.Context, arg ListOrganizationTeamsParams) ([]ListOrganizationTeamsRow, error)
 	ListUserOrganizations(ctx context.Context, userID string) ([]ListUserOrganizationsRow, error)
 	ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error)
+	LockOrganizationForInvitation(ctx context.Context, id string) (string, error)
 	MarkUserEmailVerified(ctx context.Context, id string) error
 	Ping(ctx context.Context) (int32, error)
 	RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) (string, error)

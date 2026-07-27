@@ -332,6 +332,9 @@ func (h *Handler) inviteOrganizationWorkspaceMember(c fiber.Ctx) error {
 	}
 	defer tx.Rollback(c.Context())
 	queries := h.queries.WithTx(tx)
+	if _, lockErr := queries.LockOrganizationForInvitation(c.Context(), access.Org.ID); lockErr != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to send invitation")
+	}
 	if _, duplicateErr := queries.GetPendingOrganizationInvitation(c.Context(), db.GetPendingOrganizationInvitationParams{
 		OrganizationID: access.Org.ID, Email: request.Email, TeamID: teamID,
 	}); duplicateErr == nil {

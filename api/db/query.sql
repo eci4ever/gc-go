@@ -709,6 +709,13 @@ WHERE organization_id = $1
   AND expires_at > (now() AT TIME ZONE 'UTC')
 LIMIT 1;
 
+-- name: LockOrganizationForInvitation :one
+SELECT id
+FROM organizations
+WHERE id = $1
+  AND deleted_at IS NULL
+FOR UPDATE;
+
 -- name: AdminCreateOrganizationInvitation :one
 INSERT INTO invitations (
     id,

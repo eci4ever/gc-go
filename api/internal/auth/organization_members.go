@@ -233,6 +233,9 @@ func (h *Handler) adminInviteOrganizationMember(c fiber.Ctx) error {
 	}
 	defer transaction.Rollback(c.Context())
 	queries := h.queries.WithTx(transaction)
+	if _, err := queries.LockOrganizationForInvitation(c.Context(), organizationID); err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to send invitation")
+	}
 	if _, err := queries.GetPendingOrganizationInvitation(
 		c.Context(),
 		db.GetPendingOrganizationInvitationParams{
