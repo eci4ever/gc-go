@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	if err := godotenv.Load("../.env", ".env"); err != nil && !os.IsNotExist(err) {
+	if err := godotenv.Load("../.env"); err != nil && !os.IsNotExist(err) {
 		log.Fatalf("load environment: %v", err)
 	}
 
@@ -38,7 +38,7 @@ func main() {
 	}
 
 	queries := db.New(database)
-	cookieSecure := os.Getenv("APP_ENV") == "production"
+	cookieSecure := false
 	if value := os.Getenv("COOKIE_SECURE"); value != "" {
 		parsed, err := strconv.ParseBool(value)
 		if err != nil {

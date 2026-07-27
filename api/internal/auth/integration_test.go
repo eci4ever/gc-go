@@ -25,7 +25,7 @@ func TestAuthFlowIntegration(t *testing.T) {
 	if os.Getenv("AUTH_INTEGRATION") != "1" {
 		t.Skip("set AUTH_INTEGRATION=1 to run against DATABASE_URL")
 	}
-	if err := godotenv.Load("../../.env"); err != nil && !os.IsNotExist(err) {
+	if err := godotenv.Load("../../../.env"); err != nil && !os.IsNotExist(err) {
 		t.Fatalf("load environment: %v", err)
 	}
 

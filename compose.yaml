@@ -1,4 +1,4 @@
-name: ${COMPOSE_PROJECT_NAME:-gc-go}
+name: gc-go
 
 services:
   postgres:
@@ -7,9 +7,9 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: gcgo
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
@@ -29,7 +29,7 @@ services:
     image: gc-go-api:local
     command: ["/app/migrate"]
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/gcgo?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,8 +42,7 @@ services:
     image: gc-go-api:local
     container_name: gc-go-api
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
-      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/gcgo?sslmode=disable
       APP_URL: ${APP_URL:-http://gc-go-web.orb.local}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       LISTEN_ADDR: :3000

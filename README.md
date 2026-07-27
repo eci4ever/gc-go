@@ -60,8 +60,10 @@ migrations, then runs the Go API and Vite natively. Open
 `http://localhost:5173`. Stop the app with `Ctrl+C`; stop PostgreSQL separately
 with `npm run dev:down`.
 
-All development and Docker variables live in the root `.env`. Copy
-`.env.example` when setting up a new checkout.
+All development and Docker variables live in the root `.env`. The local
+database connection uses the single `DATABASE_URL` variable; Compose keeps the
+matching local PostgreSQL bootstrap values internally. Copy `.env.example`
+when setting up a new checkout.
 
 ## Database
 
