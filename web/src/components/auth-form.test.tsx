@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { http, HttpResponse } from 'msw'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -109,8 +109,13 @@ describe('AuthForm', () => {
   })
 
   it('renders signup-only fields and requirements', () => {
-    renderWithQuery(<AuthForm mode="signup" />)
+    const { container } = renderWithQuery(<AuthForm mode="signup" />)
+    const signup = within(container)
 
+    expect(
+      signup.getByRole('button', { name: 'Go to home' }),
+    ).toBeInTheDocument()
+    expect(signup.queryByText('Back to home')).not.toBeInTheDocument()
     expect(screen.getByLabelText('Name')).toBeInTheDocument()
     expect(
       screen.getByRole('checkbox', {

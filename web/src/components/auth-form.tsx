@@ -4,7 +4,6 @@ import { Link } from '@tanstack/react-router'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Activity,
-  ArrowLeft,
   ArrowRight,
   Eye,
   EyeOff,
@@ -153,9 +152,13 @@ export function AuthForm({ mode }: AuthFormProps) {
     <main className="grid min-h-[calc(100vh-4rem)] place-items-center py-10">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
-          <span className="mx-auto grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground">
+          <Link
+            to="/"
+            aria-label="Go to home"
+            className="mx-auto grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground transition-transform hover:-rotate-3"
+          >
             <Activity className="size-5" />
-          </span>
+          </Link>
           <h1 className="mt-4 font-heading text-2xl font-semibold tracking-tight">
             {isLogin ? 'Welcome back' : 'Create your account'}
           </h1>
@@ -292,14 +295,6 @@ export function AuthForm({ mode }: AuthFormProps) {
           </CardContent>
         </Card>
 
-        <Button
-          variant="ghost"
-          className="mx-auto mt-4 flex"
-          render={<Link to="/" />}
-        >
-          <ArrowLeft data-icon="inline-start" />
-          Back to home
-        </Button>
       </div>
     </main>
   )
