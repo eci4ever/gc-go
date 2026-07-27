@@ -49,6 +49,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
   debian-keyring \
   git \
   gnupg \
+  jq \
   sudo \
   tar \
   xz-utils
@@ -57,12 +58,20 @@ go_archive="go${go_version}.linux-${go_arch}.tar.gz"
 curl --fail --location --silent --show-error \
   "https://go.dev/dl/${go_archive}" \
   --output "$temp_dir/$go_archive"
-curl --fail --location --silent --show-error \
-  "https://go.dev/dl/${go_archive}.sha256" \
-  --output "$temp_dir/$go_archive.sha256"
+go_checksum="$(
+  curl --fail --location --silent --show-error \
+    "https://go.dev/dl/?mode=json&include=all" |
+    jq --exit-status --raw-output \
+      --arg archive "$go_archive" \
+      '.[] | .files[] | select(.filename == $archive) | .sha256'
+)"
+if [[ ! "$go_checksum" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "Unable to resolve the official checksum for $go_archive." >&2
+  exit 1
+fi
 (
   cd "$temp_dir"
-  printf '%s  %s\n' "$(tr -d '[:space:]' < "$go_archive.sha256")" "$go_archive" |
+  printf '%s  %s\n' "$go_checksum" "$go_archive" |
     sha256sum --check -
 )
 rm -rf /usr/local/go
