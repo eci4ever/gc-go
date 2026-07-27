@@ -1032,6 +1032,45 @@ func TestAuthFlowIntegration(t *testing.T) {
 	}
 	archivedMutationResponse.Body.Close()
 
+	archivedUpdateResponse := authRequest(
+		t,
+		app,
+		http.MethodPut,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID,
+		map[string]any{"name": "Archived update"},
+		adminCookies[0],
+	)
+	if archivedUpdateResponse.StatusCode != http.StatusConflict {
+		t.Fatalf("archived team update status = %d, want %d", archivedUpdateResponse.StatusCode, http.StatusConflict)
+	}
+	archivedUpdateResponse.Body.Close()
+
+	archivedSingleAddResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/members",
+		map[string]any{"userId": managedUserBody.User.ID},
+		adminCookies[0],
+	)
+	if archivedSingleAddResponse.StatusCode != http.StatusConflict {
+		t.Fatalf("archived single member add status = %d, want %d", archivedSingleAddResponse.StatusCode, http.StatusConflict)
+	}
+	archivedSingleAddResponse.Body.Close()
+
+	archivedSingleRemoveResponse := authRequest(
+		t,
+		app,
+		http.MethodDelete,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/members/"+managedUserBody.User.ID,
+		nil,
+		adminCookies[0],
+	)
+	if archivedSingleRemoveResponse.StatusCode != http.StatusConflict {
+		t.Fatalf("archived single member remove status = %d, want %d", archivedSingleRemoveResponse.StatusCode, http.StatusConflict)
+	}
+	archivedSingleRemoveResponse.Body.Close()
+
 	restoreTeamResponse := authRequest(
 		t,
 		app,
