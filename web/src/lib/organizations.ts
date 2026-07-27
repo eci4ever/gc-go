@@ -106,6 +106,19 @@ export type TeamMember = {
   image: string | null;
   organizationRole: OrganizationRole;
   createdAt: string | null;
+  teamRoleId: string | null;
+  teamRoleName: string | null;
+};
+
+export type TeamRole = {
+  id: string;
+  organizationId: string;
+  name: string;
+  description: string;
+  permissions: string[];
+  assignmentCount: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type OrganizationAuditEvent = {
@@ -226,6 +239,74 @@ export function teamMembersQueryOptions(slug: string, teamId: string) {
       return { members: result.members ?? [] };
     },
   });
+}
+
+export function teamRolesQueryOptions(slug: string) {
+  return queryOptions({
+    queryKey: ["organizations", slug, "team-roles"] as const,
+    queryFn: async () => {
+      const result = await request<{
+        permissions: OrganizationPermission[];
+        roles: TeamRole[];
+      }>(`/api/organizations/${encodeURIComponent(slug)}/team-roles`);
+      return {
+        permissions: result.permissions ?? [],
+        roles: result.roles ?? [],
+      };
+    },
+  });
+}
+
+export function teamAccessQueryOptions(slug: string, teamId: string) {
+  return queryOptions({
+    queryKey: ["organizations", slug, "teams", teamId, "access"] as const,
+    queryFn: async () => {
+      const result = await request<{ permissions: string[] }>(
+        `/api/organizations/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamId)}/access`,
+      );
+      return { permissions: result.permissions ?? [] };
+    },
+  });
+}
+
+export function createTeamRole(
+  slug: string,
+  input: { name: string; description: string; permissions: string[] },
+) {
+  return request<{ role: TeamRole; permissions: string[] }>(
+    `/api/organizations/${encodeURIComponent(slug)}/team-roles`,
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+export function updateTeamRole(
+  slug: string,
+  roleId: string,
+  input: { name: string; description: string; permissions: string[] },
+) {
+  return request<{ role: TeamRole; permissions: string[] }>(
+    `/api/organizations/${encodeURIComponent(slug)}/team-roles/${encodeURIComponent(roleId)}`,
+    { method: "PUT", body: JSON.stringify(input) },
+  );
+}
+
+export function deleteTeamRole(slug: string, roleId: string) {
+  return emptyRequest(
+    `/api/organizations/${encodeURIComponent(slug)}/team-roles/${encodeURIComponent(roleId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export function assignTeamMemberRole(
+  slug: string,
+  teamId: string,
+  userId: string,
+  roleId: string,
+) {
+  return emptyRequest(
+    `/api/organizations/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}/role`,
+    { method: "PUT", body: JSON.stringify({ roleId }) },
+  );
 }
 
 export function organizationAuditQueryOptions(slug: string, page = 1) {

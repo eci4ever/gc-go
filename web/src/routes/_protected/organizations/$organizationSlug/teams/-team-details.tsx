@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/select";
 import {
   archiveOrganizationTeam,
+  assignTeamMemberRole,
   bulkUpdateTeamMembers,
   cancelOrganizationInvitation,
   deleteOrganizationTeam,
@@ -43,7 +44,9 @@ import {
   organizationMembersQueryOptions,
   organizationTeamsQueryOptions,
   teamActivityQueryOptions,
+  teamAccessQueryOptions,
   teamMembersQueryOptions,
+  teamRolesQueryOptions,
   updateOrganizationTeam,
   type TeamMember,
   type OrganizationInvitation,
@@ -69,19 +72,38 @@ export function TeamDetails() {
   const teamMembers = useQuery(
     teamMembersQueryOptions(organizationSlug, teamId),
   );
+  const teamAccess = useQuery(teamAccessQueryOptions(organizationSlug, teamId));
+  const teamRoles = useQuery(teamRolesQueryOptions(organizationSlug));
   const [activityPage, setActivityPage] = useState(1);
-  const activity = useQuery(
-    teamActivityQueryOptions(organizationSlug, teamId, activityPage),
+  const fallbackTeamPermissions = [
+    "team.read",
+    "team.activity.read",
+    ...(hasOrganizationPermission(organization, "teams.update")
+      ? ["team.settings.update", "team.archive"]
+      : []),
+    ...(hasOrganizationPermission(organization, "teams.members.manage")
+      ? ["team.members.manage"]
+      : []),
+  ];
+  const effectiveTeamPermissions =
+    teamAccess.data?.permissions ?? fallbackTeamPermissions;
+  const canManage = effectiveTeamPermissions.includes("team.settings.update");
+  const canManageMembers = effectiveTeamPermissions.includes(
+    "team.members.manage",
   );
+  const canArchive = effectiveTeamPermissions.includes("team.archive");
+  const canViewActivity =
+    effectiveTeamPermissions.includes("team.activity.read");
+  const canInvite = hasOrganizationPermission(organization, "members.invite");
+  const activity = useQuery({
+    ...teamActivityQueryOptions(organizationSlug, teamId, activityPage),
+    enabled: canViewActivity,
+  });
   const team = teams.data?.teams.find((item) => item.id === teamId);
-  const canManage = hasOrganizationPermission(organization, "teams.update");
-  const canManageMembers = hasOrganizationPermission(
-    organization,
-    "teams.members.manage",
-  );
   const canDelete = hasOrganizationPermission(organization, "teams.delete");
   const archived = Boolean(team?.archivedAt);
   const editable = canManage && !archived;
+  const membersEditable = canManageMembers && !archived && !teamRoles.isPending;
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [leadUserId, setLeadUserId] = useState("");
@@ -205,6 +227,20 @@ export function TeamDetails() {
     },
     onError: (error) => toast.error(error.message),
   });
+  const assignRole = useMutation({
+    mutationFn: (input: { userId: string; roleId: string }) =>
+      assignTeamMemberRole(
+        organizationSlug,
+        teamId,
+        input.userId,
+        input.roleId,
+      ),
+    onSuccess: async () => {
+      toast.success("Team role updated");
+      await refresh();
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   const assignedIDs = new Set(
     teamMembers.data?.members.map((member) => member.userId),
@@ -229,6 +265,8 @@ export function TeamDetails() {
           image: member.image,
           organizationRole: member.role,
           createdAt: member.createdAt,
+          teamRoleId: null,
+          teamRoleName: null,
           search: `${member.name} ${member.email}`,
         })),
     [organizationMembers.data?.members, teamMembers.data?.members],
@@ -287,8 +325,9 @@ export function TeamDetails() {
     rows: MemberRow[],
     selected: string[],
     setSelected: (ids: string[]) => void,
+    showTeamRole = false,
   ): ColumnDef<MemberRow>[] => [
-    ...(editable
+    ...(membersEditable
       ? [
           {
             id: "select",
@@ -351,6 +390,41 @@ export function TeamDetails() {
         <Badge variant="secondary">{row.original.organizationRole}</Badge>
       ),
     },
+    ...(showTeamRole
+      ? [
+          {
+            id: "teamRole",
+            header: "Team role",
+            cell: ({ row }: { row: { original: MemberRow } }) =>
+              membersEditable ? (
+                <select
+                  aria-label={`Team role for ${row.original.name}`}
+                  className="h-9 w-40 border-b bg-transparent text-sm"
+                  value={row.original.teamRoleId ?? "none"}
+                  disabled={assignRole.isPending}
+                  onChange={(event) =>
+                    assignRole.mutate({
+                      userId: row.original.userId,
+                      roleId:
+                        event.target.value === "none" ? "" : event.target.value,
+                    })
+                  }
+                >
+                  <option value="none">No team role</option>
+                  {teamRoles.data?.roles.map((role) => (
+                    <option key={role.id} value={role.id}>
+                      {role.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <Badge variant="outline">
+                  {row.original.teamRoleName ?? "Member"}
+                </Badge>
+              ),
+          } satisfies ColumnDef<MemberRow>,
+        ]
+      : []),
   ];
 
   return (
@@ -367,14 +441,18 @@ export function TeamDetails() {
             {team?.description || "Manage this team and its members."}
           </p>
         </div>
-        {canManageMembers && team && (
+        {(canArchive || canDelete) && team && (
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setConfirmation(archived ? "restore" : "archive")}
-            >
-              <ArchiveIcon /> {archived ? "Restore" : "Archive"}
-            </Button>
+            {canArchive && (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setConfirmation(archived ? "restore" : "archive")
+                }
+              >
+                <ArchiveIcon /> {archived ? "Restore" : "Archive"}
+              </Button>
+            )}
             {canDelete && (
               <Button
                 variant="destructive"
@@ -387,7 +465,7 @@ export function TeamDetails() {
         )}
       </div>
 
-      {canManageMembers && (
+      {canManage && (
         <Card>
           <CardHeader>
             <CardTitle>Team details</CardTitle>
@@ -454,14 +532,14 @@ export function TeamDetails() {
               {archived ? " · Archived teams are read-only" : ""}
             </CardDescription>
           </div>
-          {editable && (
+          {membersEditable && canInvite && (
             <Button onClick={() => setInviteOpen(true)}>
               <MailPlusIcon /> Invite to team
             </Button>
           )}
         </CardHeader>
         <CardContent className="space-y-4">
-          {editable && selectedAssigned.length > 0 && (
+          {membersEditable && selectedAssigned.length > 0 && (
             <Button
               variant="destructive"
               disabled={bulk.isPending}
@@ -477,6 +555,7 @@ export function TeamDetails() {
               assignedRows,
               selectedAssigned,
               setSelectedAssigned,
+              true,
             )}
             data={assignedRows}
             searchColumn="search"
@@ -502,7 +581,7 @@ export function TeamDetails() {
         </CardContent>
       </Card>
 
-      {editable && (
+      {membersEditable && (
         <Card>
           <CardHeader>
             <CardTitle>Add organization members</CardTitle>
@@ -536,77 +615,79 @@ export function TeamDetails() {
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Team activity</CardTitle>
-          <CardDescription>Recent changes made to this team.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {activity.isPending && (
-            <p className="text-sm text-muted-foreground">Loading activity…</p>
-          )}
-          {activity.isError && (
-            <p className="text-sm text-destructive">
-              Unable to load team activity.
-            </p>
-          )}
-          {!activity.isPending &&
-            !activity.isError &&
-            activity.data?.events.length === 0 && (
-              <p className="text-sm text-muted-foreground">
-                No team activity yet.
+      {canViewActivity && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Team activity</CardTitle>
+            <CardDescription>Recent changes made to this team.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {activity.isPending && (
+              <p className="text-sm text-muted-foreground">Loading activity…</p>
+            )}
+            {activity.isError && (
+              <p className="text-sm text-destructive">
+                Unable to load team activity.
               </p>
             )}
-          {activity.data?.events.map((event) => (
-            <div
-              key={event.id}
-              className="flex items-start justify-between gap-4 border-b pb-3 last:border-0 last:pb-0"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium">
-                  {event.eventType
-                    .replace(/^organization_team_/, "")
-                    .replaceAll("_", " ")}
+            {!activity.isPending &&
+              !activity.isError &&
+              activity.data?.events.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No team activity yet.
                 </p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {event.actorName ?? event.actorEmail ?? "System"}
-                </p>
+              )}
+            {activity.data?.events.map((event) => (
+              <div
+                key={event.id}
+                className="flex items-start justify-between gap-4 border-b pb-3 last:border-0 last:pb-0"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">
+                    {event.eventType
+                      .replace(/^organization_team_/, "")
+                      .replaceAll("_", " ")}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {event.actorName ?? event.actorEmail ?? "System"}
+                  </p>
+                </div>
+                <time className="shrink-0 text-xs text-muted-foreground">
+                  {new Date(event.createdAt).toLocaleString()}
+                </time>
               </div>
-              <time className="shrink-0 text-xs text-muted-foreground">
-                {new Date(event.createdAt).toLocaleString()}
-              </time>
-            </div>
-          ))}
-          {activity.data &&
-            activity.data.pagination.total >
-              activity.data.pagination.pageSize && (
-              <div className="flex items-center justify-between">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={activityPage <= 1}
-                  onClick={() => setActivityPage((page) => page - 1)}
-                >
-                  Previous
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  Page {activityPage}
-                </span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={
-                    activityPage * activity.data.pagination.pageSize >=
-                    activity.data.pagination.total
-                  }
-                  onClick={() => setActivityPage((page) => page + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            )}
-        </CardContent>
-      </Card>
+            ))}
+            {activity.data &&
+              activity.data.pagination.total >
+                activity.data.pagination.pageSize && (
+                <div className="flex items-center justify-between">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={activityPage <= 1}
+                    onClick={() => setActivityPage((page) => page - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Page {activityPage}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={
+                      activityPage * activity.data.pagination.pageSize >=
+                      activity.data.pagination.total
+                    }
+                    onClick={() => setActivityPage((page) => page + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              )}
+          </CardContent>
+        </Card>
+      )}
 
       <Dialog
         open={confirmation !== null}

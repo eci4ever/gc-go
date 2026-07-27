@@ -71,6 +71,10 @@ func (h *Handler) RegisterOrganizations(router fiber.Router) {
 	router.Post("/:slug/roles", h.createOrganizationRole)
 	router.Put("/:slug/roles/:roleId", h.updateOrganizationRole)
 	router.Delete("/:slug/roles/:roleId", h.deleteOrganizationRole)
+	router.Get("/:slug/team-roles", h.listTeamRoles)
+	router.Post("/:slug/team-roles", h.createTeamRole)
+	router.Put("/:slug/team-roles/:roleId", h.updateTeamRole)
+	router.Delete("/:slug/team-roles/:roleId", h.deleteTeamRole)
 	router.Get("/:slug/teams", h.listOrganizationWorkspaceTeams)
 	router.Get("/:slug/accessible-teams", h.listAccessibleOrganizationTeams)
 	router.Post("/:slug/teams", h.createOrganizationWorkspaceTeam)
@@ -79,9 +83,11 @@ func (h *Handler) RegisterOrganizations(router fiber.Router) {
 	router.Post("/:slug/teams/:teamId/archive", h.archiveOrganizationWorkspaceTeam)
 	router.Delete("/:slug/teams/:teamId", h.deleteOrganizationWorkspaceTeam)
 	router.Get("/:slug/teams/:teamId/members", h.listOrganizationWorkspaceTeamMembers)
+	router.Get("/:slug/teams/:teamId/access", h.getTeamAccess)
 	router.Post("/:slug/teams/:teamId/members", h.addOrganizationWorkspaceTeamMember)
 	router.Post("/:slug/teams/:teamId/members/bulk", h.bulkOrganizationWorkspaceTeamMembers)
 	router.Delete("/:slug/teams/:teamId/members/:userId", h.deleteOrganizationWorkspaceTeamMember)
+	router.Put("/:slug/teams/:teamId/members/:userId/role", h.assignTeamMemberRole)
 	router.Get("/:slug/teams/:teamId/activity", h.listOrganizationTeamActivity)
 	router.Post("/:slug/transfer-ownership", h.transferOrganizationWorkspaceOwnership)
 	router.Post("/:slug/leave", h.leaveOrganizationWorkspace)
@@ -529,7 +535,7 @@ func (h *Handler) createOrganizationWorkspaceTeam(c fiber.Ctx) error {
 }
 
 func (h *Handler) updateOrganizationWorkspaceTeam(c fiber.Ctx) error {
-	access, ok := h.organizationPermissionAccess(c, permissionTeamsUpdate)
+	access, ok := h.teamPermissionAccess(c, permissionTeamSettings)
 	if !ok {
 		return nil
 	}
@@ -562,7 +568,7 @@ func (h *Handler) updateOrganizationWorkspaceTeam(c fiber.Ctx) error {
 }
 
 func (h *Handler) archiveOrganizationWorkspaceTeam(c fiber.Ctx) error {
-	access, ok := h.organizationPermissionAccess(c, permissionTeamsUpdate)
+	access, ok := h.teamPermissionAccess(c, permissionTeamArchive)
 	if !ok {
 		return nil
 	}
@@ -632,7 +638,7 @@ func (h *Handler) deleteOrganizationWorkspaceTeam(c fiber.Ctx) error {
 }
 
 func (h *Handler) listOrganizationWorkspaceTeamMembers(c fiber.Ctx) error {
-	access, ok := h.organizationPermissionAccess(c, permissionTeamsRead)
+	access, ok := h.teamPermissionAccess(c, permissionTeamRead)
 	if !ok {
 		return nil
 	}
@@ -651,7 +657,7 @@ func (h *Handler) listOrganizationWorkspaceTeamMembers(c fiber.Ctx) error {
 }
 
 func (h *Handler) addOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
-	access, ok := h.organizationPermissionAccess(c, permissionTeamMembersManage)
+	access, ok := h.teamPermissionAccess(c, permissionTeamMembers)
 	if !ok {
 		return nil
 	}
@@ -689,7 +695,7 @@ func (h *Handler) addOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
 }
 
 func (h *Handler) deleteOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
-	access, ok := h.organizationPermissionAccess(c, permissionTeamMembersManage)
+	access, ok := h.teamPermissionAccess(c, permissionTeamMembers)
 	if !ok {
 		return nil
 	}
@@ -733,7 +739,7 @@ func (h *Handler) deleteOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
 }
 
 func (h *Handler) bulkOrganizationWorkspaceTeamMembers(c fiber.Ctx) error {
-	access, ok := h.organizationPermissionAccess(c, permissionTeamMembersManage)
+	access, ok := h.teamPermissionAccess(c, permissionTeamMembers)
 	if !ok {
 		return nil
 	}
@@ -914,20 +920,11 @@ func (h *Handler) leaveOrganizationWorkspace(c fiber.Ctx) error {
 }
 
 func (h *Handler) listOrganizationTeamActivity(c fiber.Ctx) error {
-	access, ok := h.organizationAccess(c)
+	access, ok := h.teamPermissionAccess(c, permissionTeamActivity)
 	if !ok {
 		return nil
 	}
 	teamID := c.Params("teamId")
-	canAccess, err := h.queries.CanAccessOrganizationTeam(c.Context(), db.CanAccessOrganizationTeamParams{
-		UserID: access.Current.UserID, TeamID: teamID, OrganizationID: access.Org.ID,
-	})
-	if err != nil {
-		return jsonError(c, fiber.StatusInternalServerError, "Unable to verify team access")
-	}
-	if !canAccess {
-		return jsonError(c, fiber.StatusForbidden, "This team is not available to your account")
-	}
 	page, pageSize := adminPagination(c)
 	events, err := h.queries.ListTeamAuditEvents(c.Context(), db.ListTeamAuditEventsParams{
 		OrganizationID: access.Org.ID, TeamID: teamID,

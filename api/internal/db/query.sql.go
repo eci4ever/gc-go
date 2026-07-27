@@ -80,6 +80,20 @@ func (q *Queries) AddOrganizationTeamMember(ctx context.Context, arg AddOrganiza
 	return result.RowsAffected(), nil
 }
 
+const addTeamRolePermission = `-- name: AddTeamRolePermission :exec
+INSERT INTO team_role_permissions (role_id, permission_key) VALUES ($1, $2)
+`
+
+type AddTeamRolePermissionParams struct {
+	RoleID        string `json:"roleId"`
+	PermissionKey string `json:"permissionKey"`
+}
+
+func (q *Queries) AddTeamRolePermission(ctx context.Context, arg AddTeamRolePermissionParams) error {
+	_, err := q.db.Exec(ctx, addTeamRolePermission, arg.RoleID, arg.PermissionKey)
+	return err
+}
+
 const adminCancelOrganizationInvitation = `-- name: AdminCancelOrganizationInvitation :one
 UPDATE invitations
 SET status = 'cancelled'
@@ -1358,6 +1372,54 @@ func (q *Queries) AssignOrganizationCustomRole(ctx context.Context, arg AssignOr
 	return i, err
 }
 
+const assignTeamMemberRole = `-- name: AssignTeamMemberRole :one
+INSERT INTO team_member_roles (team_id, user_id, role_id, assigned_by)
+SELECT
+    $1::text, $2::text,
+    $3::text, $4::text
+FROM teams
+JOIN team_members
+  ON team_members.team_id = teams.id
+ AND team_members.user_id = $2::text
+JOIN team_roles
+  ON team_roles.id = $3::text
+ AND team_roles.organization_id = teams.organization_id
+WHERE teams.id = $1::text
+  AND teams.organization_id = $5::text
+ON CONFLICT (team_id, user_id) DO UPDATE
+SET role_id = excluded.role_id,
+    assigned_by = excluded.assigned_by,
+    assigned_at = (now() AT TIME ZONE 'UTC')
+RETURNING team_id, user_id, role_id, assigned_by, assigned_at
+`
+
+type AssignTeamMemberRoleParams struct {
+	TeamID         string `json:"teamId"`
+	UserID         string `json:"userId"`
+	RoleID         string `json:"roleId"`
+	AssignedBy     string `json:"assignedBy"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) AssignTeamMemberRole(ctx context.Context, arg AssignTeamMemberRoleParams) (TeamMemberRole, error) {
+	row := q.db.QueryRow(ctx, assignTeamMemberRole,
+		arg.TeamID,
+		arg.UserID,
+		arg.RoleID,
+		arg.AssignedBy,
+		arg.OrganizationID,
+	)
+	var i TeamMemberRole
+	err := row.Scan(
+		&i.TeamID,
+		&i.UserID,
+		&i.RoleID,
+		&i.AssignedBy,
+		&i.AssignedAt,
+	)
+	return i, err
+}
+
 const bulkAddOrganizationTeamMembers = `-- name: BulkAddOrganizationTeamMembers :execrows
 INSERT INTO team_members (id, team_id, user_id, created_at)
 SELECT
@@ -1496,6 +1558,38 @@ type ClearOrganizationFromUserSessionsParams struct {
 
 func (q *Queries) ClearOrganizationFromUserSessions(ctx context.Context, arg ClearOrganizationFromUserSessionsParams) error {
 	_, err := q.db.Exec(ctx, clearOrganizationFromUserSessions, arg.UserID, arg.ActiveOrganizationID)
+	return err
+}
+
+const clearTeamMemberRole = `-- name: ClearTeamMemberRole :execrows
+DELETE FROM team_member_roles
+USING teams
+WHERE team_member_roles.team_id = teams.id
+  AND team_member_roles.team_id = $1
+  AND team_member_roles.user_id = $2
+  AND teams.organization_id = $3
+`
+
+type ClearTeamMemberRoleParams struct {
+	TeamID         string `json:"teamId"`
+	UserID         string `json:"userId"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) ClearTeamMemberRole(ctx context.Context, arg ClearTeamMemberRoleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, clearTeamMemberRole, arg.TeamID, arg.UserID, arg.OrganizationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const clearTeamRolePermissions = `-- name: ClearTeamRolePermissions :exec
+DELETE FROM team_role_permissions WHERE role_id = $1
+`
+
+func (q *Queries) ClearTeamRolePermissions(ctx context.Context, roleID string) error {
+	_, err := q.db.Exec(ctx, clearTeamRolePermissions, roleID)
 	return err
 }
 
@@ -1999,6 +2093,41 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 	return i, err
 }
 
+const createTeamRole = `-- name: CreateTeamRole :one
+INSERT INTO team_roles (id, organization_id, name, description, created_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, organization_id, name, description, created_by, created_at, updated_at
+`
+
+type CreateTeamRoleParams struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	CreatedBy      string `json:"createdBy"`
+}
+
+func (q *Queries) CreateTeamRole(ctx context.Context, arg CreateTeamRoleParams) (TeamRole, error) {
+	row := q.db.QueryRow(ctx, createTeamRole,
+		arg.ID,
+		arg.OrganizationID,
+		arg.Name,
+		arg.Description,
+		arg.CreatedBy,
+	)
+	var i TeamRole
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createTwoFactorChallenge = `-- name: CreateTwoFactorChallenge :exec
 INSERT INTO two_factor_challenges (
     id,
@@ -2222,6 +2351,23 @@ WHERE token = $1
 func (q *Queries) DeleteSession(ctx context.Context, token string) error {
 	_, err := q.db.Exec(ctx, deleteSession, token)
 	return err
+}
+
+const deleteTeamRole = `-- name: DeleteTeamRole :execrows
+DELETE FROM team_roles WHERE id = $1 AND organization_id = $2
+`
+
+type DeleteTeamRoleParams struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) DeleteTeamRole(ctx context.Context, arg DeleteTeamRoleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteTeamRole, arg.ID, arg.OrganizationID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteTwoFactor = `-- name: DeleteTwoFactor :exec
@@ -2697,6 +2843,41 @@ func (q *Queries) GetSessionUser(ctx context.Context, token string) (GetSessionU
 	return i, err
 }
 
+const getTeamOrganizationID = `-- name: GetTeamOrganizationID :one
+SELECT organization_id FROM teams WHERE id = $1
+`
+
+func (q *Queries) GetTeamOrganizationID(ctx context.Context, id string) (string, error) {
+	row := q.db.QueryRow(ctx, getTeamOrganizationID, id)
+	var organization_id string
+	err := row.Scan(&organization_id)
+	return organization_id, err
+}
+
+const getTeamRole = `-- name: GetTeamRole :one
+SELECT id, organization_id, name, description, created_by, created_at, updated_at FROM team_roles WHERE id = $1 AND organization_id = $2
+`
+
+type GetTeamRoleParams struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) GetTeamRole(ctx context.Context, arg GetTeamRoleParams) (TeamRole, error) {
+	row := q.db.QueryRow(ctx, getTeamRole, arg.ID, arg.OrganizationID)
+	var i TeamRole
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getTwoFactorByUserID = `-- name: GetTwoFactorByUserID :one
 SELECT id, user_id, secret, backup_codes, enabled, created_at, updated_at
 FROM two_factors
@@ -2904,6 +3085,43 @@ type ListMemberCustomPermissionsParams struct {
 
 func (q *Queries) ListMemberCustomPermissions(ctx context.Context, arg ListMemberCustomPermissionsParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, listMemberCustomPermissions, arg.OrganizationID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var permission_key string
+		if err := rows.Scan(&permission_key); err != nil {
+			return nil, err
+		}
+		items = append(items, permission_key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMemberTeamPermissions = `-- name: ListMemberTeamPermissions :many
+SELECT team_role_permissions.permission_key
+FROM team_member_roles
+JOIN team_role_permissions ON team_role_permissions.role_id = team_member_roles.role_id
+JOIN team_roles ON team_roles.id = team_member_roles.role_id
+WHERE team_member_roles.team_id = $1
+  AND team_member_roles.user_id = $2
+  AND team_roles.organization_id = $3
+ORDER BY team_role_permissions.permission_key
+`
+
+type ListMemberTeamPermissionsParams struct {
+	TeamID         string `json:"teamId"`
+	UserID         string `json:"userId"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) ListMemberTeamPermissions(ctx context.Context, arg ListMemberTeamPermissionsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listMemberTeamPermissions, arg.TeamID, arg.UserID, arg.OrganizationID)
 	if err != nil {
 		return nil, err
 	}
@@ -3200,12 +3418,18 @@ func (q *Queries) ListOrganizationRolePermissionKeys(ctx context.Context, arg Li
 const listOrganizationTeamMembers = `-- name: ListOrganizationTeamMembers :many
 SELECT
     team_members.id, users.id AS user_id, users.name, users.email,
-    users.image, members.role AS organization_role, team_members.created_at
+    users.image, members.role AS organization_role, team_members.created_at,
+    team_member_roles.role_id AS team_role_id,
+    team_roles.name AS team_role_name
 FROM team_members
 JOIN users ON users.id = team_members.user_id
 JOIN members
   ON members.user_id = users.id
  AND members.organization_id = $1::text
+LEFT JOIN team_member_roles
+  ON team_member_roles.team_id = team_members.team_id
+ AND team_member_roles.user_id = team_members.user_id
+LEFT JOIN team_roles ON team_roles.id = team_member_roles.role_id
 WHERE team_members.team_id = $2::text
 ORDER BY users.name
 `
@@ -3223,6 +3447,8 @@ type ListOrganizationTeamMembersRow struct {
 	Image            pgtype.Text      `json:"image"`
 	OrganizationRole string           `json:"organizationRole"`
 	CreatedAt        pgtype.Timestamp `json:"createdAt"`
+	TeamRoleID       pgtype.Text      `json:"teamRoleId"`
+	TeamRoleName     pgtype.Text      `json:"teamRoleName"`
 }
 
 func (q *Queries) ListOrganizationTeamMembers(ctx context.Context, arg ListOrganizationTeamMembersParams) ([]ListOrganizationTeamMembersRow, error) {
@@ -3242,6 +3468,8 @@ func (q *Queries) ListOrganizationTeamMembers(ctx context.Context, arg ListOrgan
 			&i.Image,
 			&i.OrganizationRole,
 			&i.CreatedAt,
+			&i.TeamRoleID,
+			&i.TeamRoleName,
 		); err != nil {
 			return nil, err
 		}
@@ -3376,6 +3604,98 @@ func (q *Queries) ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEven
 			&i.ActorID,
 			&i.ActorName,
 			&i.ActorEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTeamRolePermissionKeys = `-- name: ListTeamRolePermissionKeys :many
+SELECT team_role_permissions.permission_key
+FROM team_role_permissions
+JOIN team_roles ON team_roles.id = team_role_permissions.role_id
+WHERE team_roles.id = $1 AND team_roles.organization_id = $2
+ORDER BY team_role_permissions.permission_key
+`
+
+type ListTeamRolePermissionKeysParams struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+}
+
+func (q *Queries) ListTeamRolePermissionKeys(ctx context.Context, arg ListTeamRolePermissionKeysParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listTeamRolePermissionKeys, arg.ID, arg.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var permission_key string
+		if err := rows.Scan(&permission_key); err != nil {
+			return nil, err
+		}
+		items = append(items, permission_key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTeamRoles = `-- name: ListTeamRoles :many
+SELECT
+    team_roles.id, team_roles.organization_id, team_roles.name,
+    team_roles.description, team_roles.created_at, team_roles.updated_at,
+    coalesce(
+        array_agg(team_role_permissions.permission_key ORDER BY team_role_permissions.permission_key)
+            FILTER (WHERE team_role_permissions.permission_key IS NOT NULL),
+        ARRAY[]::text[]
+    )::text[] AS permissions,
+    count(DISTINCT team_member_roles.team_id || ':' || team_member_roles.user_id)::int
+        AS assignment_count
+FROM team_roles
+LEFT JOIN team_role_permissions ON team_role_permissions.role_id = team_roles.id
+LEFT JOIN team_member_roles ON team_member_roles.role_id = team_roles.id
+WHERE team_roles.organization_id = $1
+GROUP BY team_roles.id
+ORDER BY team_roles.name
+`
+
+type ListTeamRolesRow struct {
+	ID              string           `json:"id"`
+	OrganizationID  string           `json:"organizationId"`
+	Name            string           `json:"name"`
+	Description     string           `json:"description"`
+	CreatedAt       pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt       pgtype.Timestamp `json:"updatedAt"`
+	Permissions     []string         `json:"permissions"`
+	AssignmentCount int32            `json:"assignmentCount"`
+}
+
+func (q *Queries) ListTeamRoles(ctx context.Context, organizationID string) ([]ListTeamRolesRow, error) {
+	rows, err := q.db.Query(ctx, listTeamRoles, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTeamRolesRow
+	for rows.Next() {
+		var i ListTeamRolesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.Name,
+			&i.Description,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Permissions,
+			&i.AssignmentCount,
 		); err != nil {
 			return nil, err
 		}
@@ -3926,6 +4246,39 @@ func (q *Queries) UpdateOrganizationWorkspace(ctx context.Context, arg UpdateOrg
 		&i.UpdatedAt,
 		&i.Metadata,
 		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateTeamRole = `-- name: UpdateTeamRole :one
+UPDATE team_roles SET name = $3, description = $4
+WHERE id = $1 AND organization_id = $2
+RETURNING id, organization_id, name, description, created_by, created_at, updated_at
+`
+
+type UpdateTeamRoleParams struct {
+	ID             string `json:"id"`
+	OrganizationID string `json:"organizationId"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+}
+
+func (q *Queries) UpdateTeamRole(ctx context.Context, arg UpdateTeamRoleParams) (TeamRole, error) {
+	row := q.db.QueryRow(ctx, updateTeamRole,
+		arg.ID,
+		arg.OrganizationID,
+		arg.Name,
+		arg.Description,
+	)
+	var i TeamRole
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.Description,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

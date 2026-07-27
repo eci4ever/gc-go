@@ -1174,6 +1174,9 @@ SELECT EXISTS (
 SELECT * FROM teams
 WHERE id = $1 AND organization_id = $2;
 
+-- name: GetTeamOrganizationID :one
+SELECT organization_id FROM teams WHERE id = $1;
+
 -- name: CountActiveOrganizationMembersByIDs :one
 SELECT count(*)::int
 FROM members
@@ -1207,14 +1210,105 @@ RETURNING *;
 -- name: ListOrganizationTeamMembers :many
 SELECT
     team_members.id, users.id AS user_id, users.name, users.email,
-    users.image, members.role AS organization_role, team_members.created_at
+    users.image, members.role AS organization_role, team_members.created_at,
+    team_member_roles.role_id AS team_role_id,
+    team_roles.name AS team_role_name
 FROM team_members
 JOIN users ON users.id = team_members.user_id
 JOIN members
   ON members.user_id = users.id
  AND members.organization_id = sqlc.arg(organization_id)::text
+LEFT JOIN team_member_roles
+  ON team_member_roles.team_id = team_members.team_id
+ AND team_member_roles.user_id = team_members.user_id
+LEFT JOIN team_roles ON team_roles.id = team_member_roles.role_id
 WHERE team_members.team_id = sqlc.arg(team_id)::text
 ORDER BY users.name;
+
+-- name: ListTeamRoles :many
+SELECT
+    team_roles.id, team_roles.organization_id, team_roles.name,
+    team_roles.description, team_roles.created_at, team_roles.updated_at,
+    coalesce(
+        array_agg(team_role_permissions.permission_key ORDER BY team_role_permissions.permission_key)
+            FILTER (WHERE team_role_permissions.permission_key IS NOT NULL),
+        ARRAY[]::text[]
+    )::text[] AS permissions,
+    count(DISTINCT team_member_roles.team_id || ':' || team_member_roles.user_id)::int
+        AS assignment_count
+FROM team_roles
+LEFT JOIN team_role_permissions ON team_role_permissions.role_id = team_roles.id
+LEFT JOIN team_member_roles ON team_member_roles.role_id = team_roles.id
+WHERE team_roles.organization_id = $1
+GROUP BY team_roles.id
+ORDER BY team_roles.name;
+
+-- name: GetTeamRole :one
+SELECT * FROM team_roles WHERE id = $1 AND organization_id = $2;
+
+-- name: CreateTeamRole :one
+INSERT INTO team_roles (id, organization_id, name, description, created_by)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING *;
+
+-- name: UpdateTeamRole :one
+UPDATE team_roles SET name = $3, description = $4
+WHERE id = $1 AND organization_id = $2
+RETURNING *;
+
+-- name: ClearTeamRolePermissions :exec
+DELETE FROM team_role_permissions WHERE role_id = $1;
+
+-- name: AddTeamRolePermission :exec
+INSERT INTO team_role_permissions (role_id, permission_key) VALUES ($1, $2);
+
+-- name: DeleteTeamRole :execrows
+DELETE FROM team_roles WHERE id = $1 AND organization_id = $2;
+
+-- name: ListTeamRolePermissionKeys :many
+SELECT team_role_permissions.permission_key
+FROM team_role_permissions
+JOIN team_roles ON team_roles.id = team_role_permissions.role_id
+WHERE team_roles.id = $1 AND team_roles.organization_id = $2
+ORDER BY team_role_permissions.permission_key;
+
+-- name: ListMemberTeamPermissions :many
+SELECT team_role_permissions.permission_key
+FROM team_member_roles
+JOIN team_role_permissions ON team_role_permissions.role_id = team_member_roles.role_id
+JOIN team_roles ON team_roles.id = team_member_roles.role_id
+WHERE team_member_roles.team_id = $1
+  AND team_member_roles.user_id = $2
+  AND team_roles.organization_id = $3
+ORDER BY team_role_permissions.permission_key;
+
+-- name: AssignTeamMemberRole :one
+INSERT INTO team_member_roles (team_id, user_id, role_id, assigned_by)
+SELECT
+    sqlc.arg(team_id)::text, sqlc.arg(user_id)::text,
+    sqlc.arg(role_id)::text, sqlc.arg(assigned_by)::text
+FROM teams
+JOIN team_members
+  ON team_members.team_id = teams.id
+ AND team_members.user_id = sqlc.arg(user_id)::text
+JOIN team_roles
+  ON team_roles.id = sqlc.arg(role_id)::text
+ AND team_roles.organization_id = teams.organization_id
+WHERE teams.id = sqlc.arg(team_id)::text
+  AND teams.organization_id = sqlc.arg(organization_id)::text
+ON CONFLICT (team_id, user_id) DO UPDATE
+SET role_id = excluded.role_id,
+    assigned_by = excluded.assigned_by,
+    assigned_at = (now() AT TIME ZONE 'UTC')
+RETURNING *;
+
+-- name: ClearTeamMemberRole :execrows
+DELETE FROM team_member_roles
+USING teams
+WHERE team_member_roles.team_id = teams.id
+  AND team_member_roles.team_id = $1
+  AND team_member_roles.user_id = $2
+  AND teams.organization_id = $3;
 
 -- name: AddOrganizationTeamMember :execrows
 INSERT INTO team_members (id, team_id, user_id, created_at)

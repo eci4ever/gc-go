@@ -133,6 +133,29 @@ type TeamMember struct {
 	CreatedAt pgtype.Timestamp `json:"createdAt"`
 }
 
+type TeamMemberRole struct {
+	TeamID     string           `json:"teamId"`
+	UserID     string           `json:"userId"`
+	RoleID     string           `json:"roleId"`
+	AssignedBy string           `json:"assignedBy"`
+	AssignedAt pgtype.Timestamp `json:"assignedAt"`
+}
+
+type TeamRole struct {
+	ID             string           `json:"id"`
+	OrganizationID string           `json:"organizationId"`
+	Name           string           `json:"name"`
+	Description    string           `json:"description"`
+	CreatedBy      string           `json:"createdBy"`
+	CreatedAt      pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt      pgtype.Timestamp `json:"updatedAt"`
+}
+
+type TeamRolePermission struct {
+	RoleID        string `json:"roleId"`
+	PermissionKey string `json:"permissionKey"`
+}
+
 type TwoFactor struct {
 	ID          string           `json:"id"`
 	UserID      string           `json:"userId"`

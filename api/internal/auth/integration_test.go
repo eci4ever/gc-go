@@ -1073,6 +1073,56 @@ func TestAuthFlowIntegration(t *testing.T) {
 	}
 	addTeamMemberResponse.Body.Close()
 
+	teamRoleResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/team-roles",
+		map[string]any{
+			"name":        "Team editor",
+			"description": "Can edit an assigned team",
+			"permissions": []string{permissionTeamSettings},
+		},
+		adminCookies[0],
+	)
+	if teamRoleResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("create team role status = %d, want %d", teamRoleResponse.StatusCode, http.StatusCreated)
+	}
+	var teamRoleBody struct {
+		Role db.TeamRole `json:"role"`
+	}
+	decodeResponse(t, teamRoleResponse, &teamRoleBody)
+
+	assignTeamRoleResponse := authRequest(
+		t,
+		app,
+		http.MethodPut,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+
+			"/members/"+managedUserBody.User.ID+"/role",
+		map[string]any{"roleId": teamRoleBody.Role.ID},
+		adminCookies[0],
+	)
+	if assignTeamRoleResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("assign team role status = %d, want %d", assignTeamRoleResponse.StatusCode, http.StatusNoContent)
+	}
+	assignTeamRoleResponse.Body.Close()
+
+	teamRoleUpdateResponse := authRequest(
+		t,
+		app,
+		http.MethodPut,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID,
+		map[string]any{
+			"name": "Operations", "description": "Updated by team permission",
+			"leadUserId": managedUserBody.User.ID,
+		},
+		impersonatedCookies[0],
+	)
+	if teamRoleUpdateResponse.StatusCode != http.StatusOK {
+		t.Fatalf("team role update status = %d, want %d", teamRoleUpdateResponse.StatusCode, http.StatusOK)
+	}
+	teamRoleUpdateResponse.Body.Close()
+
 	emptyBulkResponse := authRequest(
 		t,
 		app,

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import type {
   OrganizationCustomRole,
   OrganizationPermission,
+  TeamRole,
 } from "@/lib/organizations";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,9 +30,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createOrganizationRole,
+  createTeamRole,
   deleteOrganizationRole,
+  deleteTeamRole,
   organizationRolesQueryOptions,
+  teamRolesQueryOptions,
   updateOrganizationRole,
+  updateTeamRole,
 } from "@/lib/organizations";
 
 export const Route = createFileRoute(
@@ -52,9 +57,13 @@ function OrganizationRoles() {
   const { organizationSlug } = Route.useParams();
   const queryClient = useQueryClient();
   const query = useQuery(organizationRolesQueryOptions(organizationSlug));
+  const teamRoles = useQuery(teamRolesQueryOptions(organizationSlug));
   const [editing, setEditing] = useState<OrganizationCustomRole | "new" | null>(
     null,
   );
+  const [editingTeamRole, setEditingTeamRole] = useState<
+    TeamRole | "new" | null
+  >(null);
   const refresh = () =>
     queryClient.invalidateQueries({
       queryKey: ["organizations", organizationSlug],
@@ -70,6 +79,16 @@ function OrganizationRoles() {
           queryKey: ["organizations", organizationSlug, "members"],
         }),
       ]);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const removeTeamRole = useMutation({
+    mutationFn: (roleId: string) => deleteTeamRole(organizationSlug, roleId),
+    onSuccess: async () => {
+      toast.success("Team role deleted");
+      await queryClient.invalidateQueries({
+        queryKey: ["organizations", organizationSlug, "team-roles"],
+      });
     },
     onError: (error) => toast.error(error.message),
   });
@@ -193,6 +212,77 @@ function OrganizationRoles() {
         </Card>
       )}
 
+      <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
+            Team roles
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Reusable roles assigned separately within each team.
+          </p>
+        </div>
+        <Button variant="outline" onClick={() => setEditingTeamRole("new")}>
+          <PlusIcon />
+          Create team role
+        </Button>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {teamRoles.data?.roles.map((role) => (
+          <Card key={role.id}>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle>{role.name}</CardTitle>
+                  <CardDescription>
+                    {role.description || "No description"}
+                  </CardDescription>
+                </div>
+                <Badge variant="secondary">
+                  {role.assignmentCount} assignments
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-4 flex flex-wrap gap-2">
+                {role.permissions.map((permission) => (
+                  <Badge key={permission} variant="outline">
+                    {teamRoles.data.permissions.find(
+                      (item) => item.key === permission,
+                    )?.label ?? permission}
+                  </Badge>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setEditingTeamRole(role)}
+                >
+                  Edit role
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Delete ${role.name}`}
+                  disabled={removeTeamRole.isPending}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        `Delete ${role.name}? Its team assignments will be removed.`,
+                      )
+                    ) {
+                      removeTeamRole.mutate(role.id);
+                    }
+                  }}
+                >
+                  <Trash2Icon />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       <RoleDialog
         open={editing !== null}
         role={editing === "new" ? null : editing}
@@ -203,6 +293,21 @@ function OrganizationRoles() {
           setEditing(null);
           await refresh();
         }}
+        scope="organization"
+      />
+      <RoleDialog
+        open={editingTeamRole !== null}
+        role={editingTeamRole === "new" ? null : editingTeamRole}
+        permissions={teamRoles.data?.permissions ?? []}
+        organizationSlug={organizationSlug}
+        onOpenChange={(open) => !open && setEditingTeamRole(null)}
+        onSaved={async () => {
+          setEditingTeamRole(null);
+          await queryClient.invalidateQueries({
+            queryKey: ["organizations", organizationSlug, "team-roles"],
+          });
+        }}
+        scope="team"
       />
     </div>
   );
@@ -215,13 +320,15 @@ function RoleDialog({
   organizationSlug,
   onOpenChange,
   onSaved,
+  scope,
 }: {
   open: boolean;
-  role: OrganizationCustomRole | null;
+  role: OrganizationCustomRole | TeamRole | null;
   permissions: OrganizationPermission[];
   organizationSlug: string;
   onOpenChange: (open: boolean) => void;
   onSaved: () => Promise<void>;
+  scope: "organization" | "team";
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -242,15 +349,24 @@ function RoleDialog({
       ),
     [permissions],
   );
-  const save = useMutation({
+  const save = useMutation<unknown, Error>({
     mutationFn: () => {
       const input = { name, description, permissions: selected };
+      if (scope === "team") {
+        return role
+          ? updateTeamRole(organizationSlug, role.id, input)
+          : createTeamRole(organizationSlug, input);
+      }
       return role
         ? updateOrganizationRole(organizationSlug, role.id, input)
         : createOrganizationRole(organizationSlug, input);
     },
     onSuccess: async () => {
-      toast.success(role ? "Custom role updated" : "Custom role created");
+      toast.success(
+        role
+          ? `${scope === "team" ? "Team" : "Custom"} role updated`
+          : `${scope === "team" ? "Team" : "Custom"} role created`,
+      );
       await onSaved();
     },
     onError: (error) => toast.error(error.message),
@@ -261,11 +377,14 @@ function RoleDialog({
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {role ? `Edit ${role.name}` : "Create custom role"}
+            {role
+              ? `Edit ${role.name}`
+              : `Create ${scope === "team" ? "team" : "custom"} role`}
           </DialogTitle>
           <DialogDescription>
-            Members receive only the permissions selected here, plus basic
-            member access.
+            {scope === "team"
+              ? "This role applies only in teams where it is assigned."
+              : "Members receive these permissions plus basic member access."}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">

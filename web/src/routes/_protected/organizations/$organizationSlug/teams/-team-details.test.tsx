@@ -57,34 +57,57 @@ const available = {
 function handlers(
   bulk: Parameters<typeof http.post>[1] = async ({ request }) =>
     HttpResponse.json({
-      requestedCount: ((await request.json()) as { userIds: string[] }).userIds.length,
+      requestedCount: ((await request.json()) as { userIds: string[] }).userIds
+        .length,
       changedCount: 1,
     }),
 ) {
   server.use(
     http.get('/api/organizations/:slug/teams', () =>
       HttpResponse.json({
-        teams: [{
-          id: 'team-1',
-          name: 'Operations',
-          description: 'Core team',
-          leadUserId: 'user-1',
-          leadName: 'Assigned User',
-          memberCount: 1,
-          createdAt: '2026-07-27T00:00:00Z',
-          updatedAt: null,
-          archivedAt: mocks.archived ? '2026-07-27T01:00:00Z' : null,
-        }],
+        teams: [
+          {
+            id: 'team-1',
+            name: 'Operations',
+            description: 'Core team',
+            leadUserId: 'user-1',
+            leadName: 'Assigned User',
+            memberCount: 1,
+            createdAt: '2026-07-27T00:00:00Z',
+            updatedAt: null,
+            archivedAt: mocks.archived ? '2026-07-27T01:00:00Z' : null,
+          },
+        ],
       }),
     ),
     http.get('/api/organizations/:slug/members', () =>
-      HttpResponse.json({ members: [
-        { ...assigned, role: 'member', emailVerified: true },
-        available,
-      ], invitations: [] }),
+      HttpResponse.json({
+        members: [
+          { ...assigned, role: 'member', emailVerified: true },
+          available,
+        ],
+        invitations: [],
+      }),
     ),
     http.get('/api/organizations/:slug/teams/:teamId/members', () =>
       HttpResponse.json({ members: [assigned] }),
+    ),
+    http.get('/api/organizations/:slug/teams/:teamId/access', () =>
+      HttpResponse.json({
+        permissions:
+          mocks.role === 'member'
+            ? ['team.read', 'team.activity.read']
+            : [
+                'team.read',
+                'team.settings.update',
+                'team.members.manage',
+                'team.activity.read',
+                'team.archive',
+              ],
+      }),
+    ),
+    http.get('/api/organizations/:slug/team-roles', () =>
+      HttpResponse.json({ permissions: [], roles: [] }),
     ),
     http.get('/api/organizations/:slug/teams/:teamId/activity', () =>
       HttpResponse.json({
@@ -113,8 +136,12 @@ describe('TeamDetails member management', () => {
 
     expect(await screen.findByText('Assigned User')).toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.queryByText('Add organization members')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /remove selected/i })).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Add organization members'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /remove selected/i }),
+    ).not.toBeInTheDocument()
   })
 
   it.each(['owner', 'admin'] as const)(
@@ -129,13 +156,26 @@ describe('TeamDetails member management', () => {
       const user = userEvent.setup()
       renderWithQuery(<TeamDetails />)
 
-      await user.click(await screen.findByRole('checkbox', { name: 'Select Assigned User' }))
-      await user.click(screen.getByRole('button', { name: 'Remove selected (1)' }))
-      await waitFor(() => expect(payloads).toContainEqual({ action: 'remove', userIds: ['user-1'] }))
+      await user.click(
+        await screen.findByRole('checkbox', { name: 'Select Assigned User' }),
+      )
+      await user.click(
+        screen.getByRole('button', { name: 'Remove selected (1)' }),
+      )
+      await waitFor(() =>
+        expect(payloads).toContainEqual({
+          action: 'remove',
+          userIds: ['user-1'],
+        }),
+      )
 
-      await user.click(screen.getByRole('checkbox', { name: 'Select Available User' }))
+      await user.click(
+        screen.getByRole('checkbox', { name: 'Select Available User' }),
+      )
       await user.click(screen.getByRole('button', { name: 'Add selected (1)' }))
-      await waitFor(() => expect(payloads).toContainEqual({ action: 'add', userIds: ['user-2'] }))
+      await waitFor(() =>
+        expect(payloads).toContainEqual({ action: 'add', userIds: ['user-2'] }),
+      )
       expect(mocks.success).toHaveBeenCalledTimes(2)
     },
   )
@@ -149,7 +189,9 @@ describe('TeamDetails member management', () => {
     expect(screen.getByDisplayValue('Core team')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Save team' })).toBeDisabled()
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-    expect(screen.queryByText('Add organization members')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Add organization members'),
+    ).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /restore/i })).toBeEnabled()
   })
 
@@ -161,20 +203,33 @@ describe('TeamDetails member management', () => {
     const user = userEvent.setup()
     renderWithQuery(<TeamDetails />)
 
-    await user.click(await screen.findByRole('checkbox', { name: 'Select Available User' }))
+    await user.click(
+      await screen.findByRole('checkbox', { name: 'Select Available User' }),
+    )
     const action = screen.getByRole('button', { name: 'Add selected (1)' })
     await user.click(action)
     expect(action).toBeDisabled()
-    await waitFor(() => expect(mocks.success).toHaveBeenCalledWith('1 member added'))
+    await waitFor(() =>
+      expect(mocks.success).toHaveBeenCalledWith('1 member added'),
+    )
   })
 
   it('shows an error toast when a bulk mutation fails', async () => {
-    handlers(() => HttpResponse.json({ error: 'Unable to update team members' }, { status: 500 }))
+    handlers(() =>
+      HttpResponse.json(
+        { error: 'Unable to update team members' },
+        { status: 500 },
+      ),
+    )
     const user = userEvent.setup()
     renderWithQuery(<TeamDetails />)
 
-    await user.click(await screen.findByRole('checkbox', { name: 'Select Assigned User' }))
-    await user.click(screen.getByRole('button', { name: 'Remove selected (1)' }))
+    await user.click(
+      await screen.findByRole('checkbox', { name: 'Select Assigned User' }),
+    )
+    await user.click(
+      screen.getByRole('button', { name: 'Remove selected (1)' }),
+    )
     await waitFor(() =>
       expect(mocks.error).toHaveBeenCalledWith('Unable to update team members'),
     )
@@ -187,21 +242,28 @@ describe('TeamDetails member management', () => {
     server.use(
       http.post('/api/organizations/:slug/invitations', async ({ request }) => {
         payload = await request.json()
-        return HttpResponse.json({ invitation: { id: 'invite-1' } }, { status: 201 })
+        return HttpResponse.json(
+          { invitation: { id: 'invite-1' } },
+          { status: 201 },
+        )
       }),
     )
     const user = userEvent.setup()
     renderWithQuery(<TeamDetails />)
 
-    await user.click(await screen.findByRole('button', { name: /invite to team/i }))
+    await user.click(
+      await screen.findByRole('button', { name: /invite to team/i }),
+    )
     await user.type(screen.getByLabelText('Email'), 'new@example.com')
     await user.click(screen.getByRole('button', { name: 'Send invitation' }))
 
-    await waitFor(() => expect(payload).toEqual({
-      email: 'new@example.com',
-      role: 'member',
-      teamId: 'team-1',
-    }))
+    await waitFor(() =>
+      expect(payload).toEqual({
+        email: 'new@example.com',
+        role: 'member',
+        teamId: 'team-1',
+      }),
+    )
     expect(mocks.success).toHaveBeenCalledWith('Team invitation sent')
   })
 
@@ -211,24 +273,32 @@ describe('TeamDetails member management', () => {
     server.use(
       http.get('/api/organizations/:slug/members', () =>
         HttpResponse.json({
-          members: [{ ...assigned, role: 'member', emailVerified: true }, available],
-          invitations: [{
-            id: 'invite-1',
-            email: 'pending@example.com',
-            role: 'member',
-            status: 'pending',
-            expiresAt: '2026-08-03T00:00:00Z',
-            createdAt: '2026-07-27T00:00:00Z',
-            invitedUserId: null,
-            teamId: 'team-1',
-            teamName: 'Operations',
-          }],
+          members: [
+            { ...assigned, role: 'member', emailVerified: true },
+            available,
+          ],
+          invitations: [
+            {
+              id: 'invite-1',
+              email: 'pending@example.com',
+              role: 'member',
+              status: 'pending',
+              expiresAt: '2026-08-03T00:00:00Z',
+              createdAt: '2026-07-27T00:00:00Z',
+              invitedUserId: null,
+              teamId: 'team-1',
+              teamName: 'Operations',
+            },
+          ],
         }),
       ),
-      http.delete('/api/organizations/:slug/invitations/:invitationId', ({ params }) => {
-        cancelled = String(params.invitationId)
-        return new HttpResponse(null, { status: 204 })
-      }),
+      http.delete(
+        '/api/organizations/:slug/invitations/:invitationId',
+        ({ params }) => {
+          cancelled = String(params.invitationId)
+          return new HttpResponse(null, { status: 204 })
+        },
+      ),
     )
     const user = userEvent.setup()
     renderWithQuery(<TeamDetails />)
@@ -245,24 +315,33 @@ describe('TeamDetails member management', () => {
     renderWithQuery(<TeamDetails />)
 
     await screen.findByText('Assigned User')
-    expect(screen.queryByRole('button', { name: /invite to team/i })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /invite to team/i }),
+    ).not.toBeInTheDocument()
   })
 
   it('toasts invitation errors', async () => {
     handlers()
     server.use(
       http.post('/api/organizations/:slug/invitations', () =>
-        HttpResponse.json({ error: 'A pending invitation already exists' }, { status: 409 }),
+        HttpResponse.json(
+          { error: 'A pending invitation already exists' },
+          { status: 409 },
+        ),
       ),
     )
     const user = userEvent.setup()
     renderWithQuery(<TeamDetails />)
 
-    await user.click(await screen.findByRole('button', { name: /invite to team/i }))
+    await user.click(
+      await screen.findByRole('button', { name: /invite to team/i }),
+    )
     await user.type(screen.getByLabelText('Email'), 'duplicate@example.com')
     await user.click(screen.getByRole('button', { name: 'Send invitation' }))
     await waitFor(() =>
-      expect(mocks.error).toHaveBeenCalledWith('A pending invitation already exists'),
+      expect(mocks.error).toHaveBeenCalledWith(
+        'A pending invitation already exists',
+      ),
     )
   })
 
@@ -271,19 +350,21 @@ describe('TeamDetails member management', () => {
     server.use(
       http.get('/api/organizations/:slug/teams/:teamId/activity', () =>
         HttpResponse.json({
-          events: [{
-            id: 'event-1',
-            eventType: 'organization_team_member_added',
-            targetType: 'team',
-            targetId: 'team-1',
-            reason: null,
-            beforeState: null,
-            afterState: null,
-            createdAt: '2026-07-27T00:00:00Z',
-            actorId: 'user-1',
-            actorName: 'Assigned User',
-            actorEmail: 'assigned@example.com',
-          }],
+          events: [
+            {
+              id: 'event-1',
+              eventType: 'organization_team_member_added',
+              targetType: 'team',
+              targetId: 'team-1',
+              reason: null,
+              beforeState: null,
+              afterState: null,
+              createdAt: '2026-07-27T00:00:00Z',
+              actorId: 'user-1',
+              actorName: 'Assigned User',
+              actorEmail: 'assigned@example.com',
+            },
+          ],
           pagination: { page: 1, pageSize: 20, total: 1 },
         }),
       ),

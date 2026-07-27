@@ -70,6 +70,20 @@ func TestContainsEveryPermission(t *testing.T) {
 	}
 }
 
+func TestValidTeamPermissionKeys(t *testing.T) {
+	keys, ok := validTeamPermissionKeys([]string{
+		permissionTeamSettings,
+		permissionTeamRead,
+		permissionTeamSettings,
+	})
+	if !ok || len(keys) != 2 {
+		t.Fatalf("team permission keys = %#v, valid = %v", keys, ok)
+	}
+	if _, ok := validTeamPermissionKeys([]string{permissionTeamsDelete}); ok {
+		t.Fatal("organization permission was accepted as a team permission")
+	}
+}
+
 func TestSessionTokenIsHashed(t *testing.T) {
 	t.Parallel()
 

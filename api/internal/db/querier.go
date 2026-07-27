@@ -14,6 +14,7 @@ type Querier interface {
 	AcceptOrganizationInvitation(ctx context.Context, arg AcceptOrganizationInvitationParams) error
 	AddOrganizationRolePermission(ctx context.Context, arg AddOrganizationRolePermissionParams) error
 	AddOrganizationTeamMember(ctx context.Context, arg AddOrganizationTeamMemberParams) (int64, error)
+	AddTeamRolePermission(ctx context.Context, arg AddTeamRolePermissionParams) error
 	AdminCancelOrganizationInvitation(ctx context.Context, arg AdminCancelOrganizationInvitationParams) (string, error)
 	AdminCountAuditEvents(ctx context.Context, search string) (int32, error)
 	AdminCountOrganizations(ctx context.Context, arg AdminCountOrganizationsParams) (int32, error)
@@ -45,12 +46,15 @@ type Querier interface {
 	AdminUpsertOrganizationOwner(ctx context.Context, arg AdminUpsertOrganizationOwnerParams) error
 	AdminUserGrowth(ctx context.Context) ([]AdminUserGrowthRow, error)
 	AssignOrganizationCustomRole(ctx context.Context, arg AssignOrganizationCustomRoleParams) (Member, error)
+	AssignTeamMemberRole(ctx context.Context, arg AssignTeamMemberRoleParams) (TeamMemberRole, error)
 	BulkAddOrganizationTeamMembers(ctx context.Context, arg BulkAddOrganizationTeamMembersParams) (int64, error)
 	BulkDeleteOrganizationTeamMembers(ctx context.Context, arg BulkDeleteOrganizationTeamMembersParams) (int64, error)
 	CanAccessOrganizationTeam(ctx context.Context, arg CanAccessOrganizationTeamParams) (bool, error)
 	ClearActiveTeamFromSessions(ctx context.Context, activeTeamID pgtype.Text) error
 	ClearActiveTeamFromUserSessions(ctx context.Context, arg ClearActiveTeamFromUserSessionsParams) error
 	ClearOrganizationFromUserSessions(ctx context.Context, arg ClearOrganizationFromUserSessionsParams) error
+	ClearTeamMemberRole(ctx context.Context, arg ClearTeamMemberRoleParams) (int64, error)
+	ClearTeamRolePermissions(ctx context.Context, roleID string) error
 	CountActiveOrganizationMembersByIDs(ctx context.Context, arg CountActiveOrganizationMembersByIDsParams) (int32, error)
 	CountActiveUserSessions(ctx context.Context, userID string) (int32, error)
 	CountOrganizationAuditEvents(ctx context.Context, organizationID pgtype.Text) (int64, error)
@@ -66,6 +70,7 @@ type Querier interface {
 	CreateOrganizationCustomRole(ctx context.Context, arg CreateOrganizationCustomRoleParams) (OrganizationRole, error)
 	CreateOrganizationTeam(ctx context.Context, arg CreateOrganizationTeamParams) (Team, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	CreateTeamRole(ctx context.Context, arg CreateTeamRoleParams) (TeamRole, error)
 	CreateTwoFactorChallenge(ctx context.Context, arg CreateTwoFactorChallengeParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteAllUserSessions(ctx context.Context, userID string) error
@@ -77,6 +82,7 @@ type Querier interface {
 	DeleteOrganizationTeamMember(ctx context.Context, arg DeleteOrganizationTeamMemberParams) (int64, error)
 	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
 	DeleteSession(ctx context.Context, token string) error
+	DeleteTeamRole(ctx context.Context, arg DeleteTeamRoleParams) (int64, error)
 	DeleteTwoFactor(ctx context.Context, userID string) error
 	DeleteTwoFactorChallenge(ctx context.Context, id string) error
 	DeleteUserEmailVerifications(ctx context.Context, identifier string) error
@@ -93,11 +99,14 @@ type Querier interface {
 	GetPendingOrganizationInvitation(ctx context.Context, arg GetPendingOrganizationInvitationParams) (string, error)
 	GetRecentEmailVerification(ctx context.Context, identifier string) (pgtype.Timestamp, error)
 	GetSessionUser(ctx context.Context, token string) (GetSessionUserRow, error)
+	GetTeamOrganizationID(ctx context.Context, id string) (string, error)
+	GetTeamRole(ctx context.Context, arg GetTeamRoleParams) (TeamRole, error)
 	GetTwoFactorByUserID(ctx context.Context, userID string) (TwoFactor, error)
 	GetTwoFactorChallenge(ctx context.Context, token string) (GetTwoFactorChallengeRow, error)
 	GetUserSignInActivity(ctx context.Context, userID string) ([]GetUserSignInActivityRow, error)
 	ListAccessibleOrganizationTeams(ctx context.Context, arg ListAccessibleOrganizationTeamsParams) ([]ListAccessibleOrganizationTeamsRow, error)
 	ListMemberCustomPermissions(ctx context.Context, arg ListMemberCustomPermissionsParams) ([]string, error)
+	ListMemberTeamPermissions(ctx context.Context, arg ListMemberTeamPermissionsParams) ([]string, error)
 	ListOrganizationAuditEvents(ctx context.Context, arg ListOrganizationAuditEventsParams) ([]ListOrganizationAuditEventsRow, error)
 	ListOrganizationCustomRoles(ctx context.Context, organizationID string) ([]ListOrganizationCustomRolesRow, error)
 	ListOrganizationInvitations(ctx context.Context, organizationID string) ([]ListOrganizationInvitationsRow, error)
@@ -106,6 +115,8 @@ type Querier interface {
 	ListOrganizationTeamMembers(ctx context.Context, arg ListOrganizationTeamMembersParams) ([]ListOrganizationTeamMembersRow, error)
 	ListOrganizationTeams(ctx context.Context, arg ListOrganizationTeamsParams) ([]ListOrganizationTeamsRow, error)
 	ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]ListTeamAuditEventsRow, error)
+	ListTeamRolePermissionKeys(ctx context.Context, arg ListTeamRolePermissionKeysParams) ([]string, error)
+	ListTeamRoles(ctx context.Context, organizationID string) ([]ListTeamRolesRow, error)
 	ListUserNotifications(ctx context.Context, arg ListUserNotificationsParams) ([]Notification, error)
 	ListUserOrganizations(ctx context.Context, userID string) ([]ListUserOrganizationsRow, error)
 	ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error)
@@ -125,6 +136,7 @@ type Querier interface {
 	UpdateOrganizationMemberRole(ctx context.Context, arg UpdateOrganizationMemberRoleParams) (Member, error)
 	UpdateOrganizationTeam(ctx context.Context, arg UpdateOrganizationTeamParams) (Team, error)
 	UpdateOrganizationWorkspace(ctx context.Context, arg UpdateOrganizationWorkspaceParams) (Organization, error)
+	UpdateTeamRole(ctx context.Context, arg UpdateTeamRoleParams) (TeamRole, error)
 	UpdateTwoFactorBackupCodes(ctx context.Context, arg UpdateTwoFactorBackupCodesParams) error
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpsertPendingTwoFactor(ctx context.Context, arg UpsertPendingTwoFactorParams) (TwoFactor, error)
