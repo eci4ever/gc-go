@@ -59,8 +59,7 @@ npm run dev
 - Browser API calls use `/api` and are proxied by Vite.
 
 The API loads `api/.env` during local development. Copy `api/.env.example` to
-`api/.env` and set `DATABASE_URL` to your PostgreSQL connection URL. The
-production systemd service loads `/home/nmfairus/gc-go/api/.env` directly.
+`api/.env` and set `DATABASE_URL` to your PostgreSQL connection URL.
 
 ## Database
 
@@ -85,74 +84,3 @@ go run ./cmd/migrate --reset
 ```
 
 The reset is destructive and is never run automatically during deployment.
-
-## Legacy production deployment
-
-The files under `deploy/` describe the previous systemd-based deployment. They
-remain available during the Docker transition but are no longer deployed by
-GitHub Actions.
-
-### Provisioning a new Debian server
-
-The repository includes a one-time Debian provisioning script which installs
-Go 1.26.0, Node.js 24.18.0, npm, Git, and Caddy from their official
-distributions. It supports Debian `amd64` and `arm64`.
-
-First create the `nmfairus` deployment user and clone this repository to
-`/home/nmfairus/gc-go`. Then run:
-
-```sh
-cd /home/nmfairus/gc-go
-sudo ./deploy/provision-debian.sh
-```
-
-Create `/home/nmfairus/gc-go/api/.env`, run the database migration, and deploy
-the current commit:
-
-```sh
-cd /home/nmfairus/gc-go/api
-go run ./cmd/migrate
-cd ..
-./deploy/deploy.sh "$(git rev-parse HEAD)"
-```
-
-The provisioning script installs the systemd unit and Caddyfile, enables both
-services, and grants the deployment user permission to restart only the
-`gc-go-api` service without a password.
-
-Build the web app and copy its output to the Caddy web root:
-
-```sh
-npm run build
-sudo mkdir -p /var/www/gc-go
-sudo cp -a web/dist/. /var/www/gc-go/
-```
-
-The included Caddyfile serves the static web build and proxies `/api/*` to
-Fiber on `127.0.0.1:3000`.
-
-### Restarting the API service
-
-After changing `/home/nmfairus/gc-go/api/.env`, restart the API so the running
-process loads the new environment variables:
-
-```sh
-sudo systemctl restart gc-go-api.service
-sudo systemctl status gc-go-api.service
-sudo journalctl -u gc-go-api.service -n 100 --no-pager
-```
-
-Changing only `.env` does not require `daemon-reload`. If
-`deploy/gc-go-api.service` itself changes, reload the systemd configuration
-before restarting:
-
-```sh
-sudo systemctl daemon-reload
-sudo systemctl restart gc-go-api.service
-```
-
-## Continuous deployment
-
-Pushes to `main` run `.github/workflows/deploy.yml`. GitHub Actions connects
-to the VPS with a dedicated SSH key and runs `deploy/deploy.sh` for the exact
-commit that triggered the workflow.

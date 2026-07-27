@@ -40,7 +40,7 @@ const stack = [
     description:
       'A small HTTP surface with explicit health signals and a simple deployment footprint.',
     icon: Server,
-    items: ['Go 1.26', 'Fiber v3', 'systemd'],
+    items: ['Go 1.26', 'Fiber v3', 'Docker'],
   },
   {
     label: 'Data',
