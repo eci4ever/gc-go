@@ -8,6 +8,7 @@ import { server } from '@/test/server'
 
 const mocks = vi.hoisted(() => ({
   role: 'owner' as 'owner' | 'admin' | 'member',
+  tab: 'members' as 'members' | 'activity' | 'settings',
   archived: false,
   navigate: vi.fn(),
   success: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
         organization: { id: 'org-1', slug: 'acme', role: mocks.role },
       }),
       useParams: () => ({ organizationSlug: 'acme', teamId: 'team-1' }),
+      useSearch: () => ({ tab: mocks.tab }),
     }),
     useNavigate: () => mocks.navigate,
   }
@@ -123,6 +125,7 @@ describe('TeamDetails member management', () => {
   beforeEach(() => {
     cleanup()
     mocks.role = 'owner'
+    mocks.tab = 'members'
     mocks.archived = false
     mocks.navigate.mockReset()
     mocks.success.mockReset()
@@ -182,6 +185,7 @@ describe('TeamDetails member management', () => {
 
   it('disables team editing and member controls for archived teams', async () => {
     mocks.archived = true
+    mocks.tab = 'settings'
     handlers()
     renderWithQuery(<TeamDetails />)
 

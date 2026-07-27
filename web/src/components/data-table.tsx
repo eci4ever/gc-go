@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   flexRender,
   getCoreRowModel,
@@ -9,10 +9,20 @@ import {
   type ColumnDef,
   type SortingState,
 } from '@tanstack/react-table'
-import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  SearchIcon,
+  XIcon,
+} from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from '@/components/ui/input-group'
 import {
   Table,
   TableBody,
@@ -33,6 +43,7 @@ export function DataTable<TData>({
   onSearchChange,
   pagination,
   onPageChange,
+  toolbarActions,
 }: {
   columns: ColumnDef<TData>[]
   data: TData[]
@@ -43,6 +54,7 @@ export function DataTable<TData>({
   onSearchChange?: (value: string) => void
   pagination?: Pagination
   onPageChange?: (page: number) => void
+  toolbarActions?: ReactNode
 }) {
   const [sorting, setSorting] = useState<SortingState>([])
   const table = useReactTable({
@@ -55,29 +67,51 @@ export function DataTable<TData>({
     getSortedRowModel: getSortedRowModel(),
     state: { sorting },
   })
+  const currentSearch =
+    searchValue ??
+    ((table.getColumn(searchColumn)?.getFilterValue() as string) ?? '')
+
+  function updateSearch(value: string) {
+    if (onSearchChange) {
+      onSearchChange(value)
+    } else {
+      table.getColumn(searchColumn)?.setFilterValue(value)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
-      <Input
-        className="max-w-sm"
-        aria-label={searchPlaceholder}
-        name="table-search"
-        autoComplete="off"
-        placeholder={searchPlaceholder}
-        value={
-          searchValue ??
-          ((table.getColumn(searchColumn)?.getFilterValue() as string) ?? '')
-        }
-        onChange={(event) => {
-          if (onSearchChange) {
-            onSearchChange(event.target.value)
-          } else {
-            table
-              .getColumn(searchColumn)
-              ?.setFilterValue(event.target.value)
-          }
-        }}
-      />
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <InputGroup className="max-w-sm">
+          <InputGroupInput
+            aria-label={searchPlaceholder}
+            name="table-search"
+            autoComplete="off"
+            placeholder={searchPlaceholder}
+            value={currentSearch}
+            onChange={(event) => updateSearch(event.target.value)}
+          />
+          <InputGroupAddon>
+            <SearchIcon aria-hidden="true" />
+          </InputGroupAddon>
+          {currentSearch ? (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                size="icon-xs"
+                aria-label="Clear search"
+                onClick={() => updateSearch('')}
+              >
+                <XIcon aria-hidden="true" />
+              </InputGroupButton>
+            </InputGroupAddon>
+          ) : null}
+        </InputGroup>
+        {toolbarActions ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {toolbarActions}
+          </div>
+        ) : null}
+      </div>
       <div className="border">
         <Table>
           <TableHeader>

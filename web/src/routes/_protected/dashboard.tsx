@@ -18,6 +18,7 @@ import {
 } from 'recharts'
 
 import { Badge } from '@/components/ui/badge'
+import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -60,20 +61,16 @@ function Dashboard() {
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-heading text-xl font-semibold tracking-wide uppercase">
-            Welcome, {user.name}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            A quick view of your account and recent security activity.
-          </p>
-        </div>
-        <Button variant="outline" render={<Link to="/account" />}>
-          Manage account
-          <ArrowRightIcon />
-        </Button>
-      </div>
+      <PageHeader
+        title={`Welcome, ${user.name}`}
+        description="A quick view of your account and recent security activity."
+        actions={
+          <Button variant="outline" render={<Link to="/account" />}>
+            Manage Account
+            <ArrowRightIcon data-icon="inline-end" />
+          </Button>
+        }
+      />
 
       {dashboard.error && (
         <Card>

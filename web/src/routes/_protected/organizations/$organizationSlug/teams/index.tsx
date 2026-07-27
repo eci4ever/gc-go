@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArchiveIcon, PlusIcon, UsersIcon } from "lucide-react";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -98,16 +99,11 @@ function OrganizationTeams() {
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-xl font-semibold tracking-wide uppercase">
-            Teams
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Organize members into focused groups.
-          </p>
-        </div>
-        {canCreate && (
+      <PageHeader
+        title="Teams"
+        description="Organize members into focused groups."
+        actions={
+          canCreate ? (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger render={<Button />}>
               <PlusIcon /> Create team
@@ -152,8 +148,9 @@ function OrganizationTeams() {
               </FieldGroup>
             </DialogContent>
           </Dialog>
-        )}
-      </div>
+          ) : null
+        }
+      />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {query.data?.teams.map((team) => (
           <Card key={team.id} className={team.archivedAt ? "opacity-65" : ""}>
@@ -182,6 +179,7 @@ function OrganizationTeams() {
                     <Link
                       to="/organizations/$organizationSlug/teams/$teamId"
                       params={{ organizationSlug, teamId: team.id }}
+                      search={{ tab: "members" }}
                     />
                   }
                 >

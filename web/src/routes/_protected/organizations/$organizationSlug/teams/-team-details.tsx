@@ -2,9 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArchiveIcon, MailPlusIcon, Trash2Icon } from "lucide-react";
+import {
+  ActivityIcon,
+  ArchiveIcon,
+  MailPlusIcon,
+  SettingsIcon,
+  Trash2Icon,
+  UsersIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { DataTable } from "@/components/data-table";
+import { PageHeader } from "@/components/page-header";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,6 +61,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import {
   archiveOrganizationTeam,
   assignTeamMemberRole,
   bulkUpdateTeamMembers,
@@ -78,10 +92,12 @@ const teamRoute = getRouteApi(
 type MemberRow = TeamMember & { search: string };
 type InvitationRow = OrganizationInvitation & { search: string };
 type Confirmation = "archive" | "restore" | "delete" | null;
+type TeamTab = "members" | "activity" | "settings";
 
 export function TeamDetails() {
   const { organization } = teamRoute.useRouteContext();
   const { organizationSlug, teamId } = teamRoute.useParams();
+  const { tab: activeTab } = teamRoute.useSearch();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const teams = useQuery(organizationTeamsQueryOptions(organizationSlug));
@@ -454,22 +470,24 @@ export function TeamDetails() {
       : []),
   ];
 
+  function selectTab(value: TeamTab) {
+    void navigate({
+      to: "/organizations/$organizationSlug/teams/$teamId",
+      params: { organizationSlug, teamId },
+      search: { tab: value },
+      replace: true,
+    });
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-heading text-xl font-semibold tracking-wide uppercase">
-              {team?.name ?? "Team"}
-            </h1>
-            {archived && <Badge variant="outline">Archived</Badge>}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {team?.description || "Manage this team and its members."}
-          </p>
-        </div>
-        {(canArchive || canDelete) && team && (
-          <div className="flex gap-2">
+      <PageHeader
+        title={team?.name ?? "Team"}
+        description={team?.description || "Manage this team and its members."}
+        badge={archived ? <Badge variant="outline">Archived</Badge> : null}
+        actions={
+          (canArchive || canDelete) && team ? (
+            <>
             {canArchive && (
               <Button
                 variant="outline"
@@ -477,7 +495,8 @@ export function TeamDetails() {
                   setConfirmation(archived ? "restore" : "archive")
                 }
               >
-                <ArchiveIcon /> {archived ? "Restore" : "Archive"}
+                <ArchiveIcon data-icon="inline-start" />
+                {archived ? "Restore" : "Archive"}
               </Button>
             )}
             {canDelete && (
@@ -485,14 +504,40 @@ export function TeamDetails() {
                 variant="destructive"
                 onClick={() => setConfirmation("delete")}
               >
-                <Trash2Icon /> Delete
+                <Trash2Icon data-icon="inline-start" />
+                Delete
               </Button>
             )}
-          </div>
-        )}
-      </div>
+            </>
+          ) : null
+        }
+      />
+
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => selectTab(value as TeamTab)}
+      >
+        <TabsList variant="line" className="max-w-full overflow-x-auto">
+          <TabsTrigger value="members">
+            <UsersIcon data-icon="inline-start" />
+            Members
+          </TabsTrigger>
+          {canViewActivity && (
+            <TabsTrigger value="activity">
+              <ActivityIcon data-icon="inline-start" />
+              Activity
+            </TabsTrigger>
+          )}
+          {canManage && (
+            <TabsTrigger value="settings">
+              <SettingsIcon data-icon="inline-start" />
+              Settings
+            </TabsTrigger>
+          )}
+        </TabsList>
 
       {canManage && (
+        <TabsContent value="settings" keepMounted>
         <Card>
           <CardHeader>
             <CardTitle>Team details</CardTitle>
@@ -558,8 +603,10 @@ export function TeamDetails() {
             </FieldGroup>
           </CardContent>
         </Card>
+        </TabsContent>
       )}
 
+      <TabsContent value="members" keepMounted className="flex flex-col gap-4">
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-3">
           <div>
@@ -651,8 +698,10 @@ export function TeamDetails() {
           </CardContent>
         </Card>
       )}
+      </TabsContent>
 
       {canViewActivity && (
+        <TabsContent value="activity" keepMounted>
         <Card>
           <CardHeader>
             <CardTitle>Team activity</CardTitle>
@@ -732,7 +781,9 @@ export function TeamDetails() {
               )}
           </CardContent>
         </Card>
+        </TabsContent>
       )}
+      </Tabs>
 
       <AlertDialog
         open={confirmation !== null}

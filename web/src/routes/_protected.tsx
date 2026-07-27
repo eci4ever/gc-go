@@ -11,6 +11,7 @@ import {
 import { toast } from 'sonner'
 
 import { AppSidebar } from '@/components/app-sidebar'
+import { AppCommandMenu } from '@/components/app-command-menu'
 import { NotificationCenter } from '@/components/notification-center'
 import { TeamSwitcher } from '@/components/team-switcher'
 import { ThemeSwitcher } from '@/components/theme-switcher'
@@ -114,6 +115,7 @@ function ProtectedLayout() {
           organizationSlug: activeOrganization!.slug,
           teamId: team.id,
         },
+        search: { tab: 'members' },
       })
     },
     onError: (error) => toast.error(error.message),
@@ -240,6 +242,12 @@ function ProtectedLayout() {
             </Breadcrumb>
           </div>
           <div className="flex items-center gap-2">
+            <AppCommandMenu
+              organizations={organizations.data?.organizations ?? []}
+              platformAdmin={
+                user.role === 'admin' && !session?.impersonatedBy
+              }
+            />
             {activeOrganization && (
               <TeamSwitcher
                 teams={teams.data?.teams ?? []}
