@@ -936,6 +936,169 @@ func TestAuthFlowIntegration(t *testing.T) {
 	}
 	addTeamMemberResponse.Body.Close()
 
+	emptyBulkResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/members/bulk",
+		map[string]any{"action": "add", "userIds": []string{}},
+		adminCookies[0],
+	)
+	if emptyBulkResponse.StatusCode != http.StatusBadRequest {
+		t.Fatalf("empty bulk members status = %d, want %d", emptyBulkResponse.StatusCode, http.StatusBadRequest)
+	}
+	emptyBulkResponse.Body.Close()
+
+	outsiderBulkResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/members/bulk",
+		map[string]any{"action": "add", "userIds": []string{"outside-user"}},
+		adminCookies[0],
+	)
+	if outsiderBulkResponse.StatusCode != http.StatusBadRequest {
+		t.Fatalf("outsider bulk members status = %d, want %d", outsiderBulkResponse.StatusCode, http.StatusBadRequest)
+	}
+	outsiderBulkResponse.Body.Close()
+
+	bulkAddResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/members/bulk",
+		map[string]any{
+			"action":  "add",
+			"userIds": []string{managedUserBody.User.ID, signupBody.User.ID, signupBody.User.ID},
+		},
+		adminCookies[0],
+	)
+	if bulkAddResponse.StatusCode != http.StatusOK {
+		t.Fatalf("mixed bulk add status = %d, want %d", bulkAddResponse.StatusCode, http.StatusOK)
+	}
+	var bulkAddBody struct {
+		RequestedCount int   `json:"requestedCount"`
+		ChangedCount   int64 `json:"changedCount"`
+	}
+	decodeResponse(t, bulkAddResponse, &bulkAddBody)
+	if bulkAddBody.RequestedCount != 2 || bulkAddBody.ChangedCount != 1 {
+		t.Fatalf("mixed bulk add counts = %+v, want requested 2 changed 1", bulkAddBody)
+	}
+
+	memberBulkResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/members/bulk",
+		map[string]any{"action": "remove", "userIds": []string{signupBody.User.ID}},
+		impersonatedCookies[0],
+	)
+	if memberBulkResponse.StatusCode != http.StatusForbidden {
+		t.Fatalf("member bulk members status = %d, want %d", memberBulkResponse.StatusCode, http.StatusForbidden)
+	}
+	memberBulkResponse.Body.Close()
+
+	if _, err := pool.Exec(
+		context.Background(),
+		"UPDATE members SET role = 'admin' WHERE organization_id = $1 AND user_id = $2",
+		organizationBody.Organization.ID,
+		managedUserBody.User.ID,
+	); err != nil {
+		t.Fatalf("promote organization admin: %v", err)
+	}
+	archiveTeamResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/archive",
+		map[string]any{"archived": true},
+		impersonatedCookies[0],
+	)
+	if archiveTeamResponse.StatusCode != http.StatusOK {
+		t.Fatalf("archive team status = %d, want %d", archiveTeamResponse.StatusCode, http.StatusOK)
+	}
+	archiveTeamResponse.Body.Close()
+
+	archivedMutationResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/members/bulk",
+		map[string]any{"action": "remove", "userIds": []string{signupBody.User.ID}},
+		adminCookies[0],
+	)
+	if archivedMutationResponse.StatusCode != http.StatusConflict {
+		t.Fatalf("archived team mutation status = %d, want %d", archivedMutationResponse.StatusCode, http.StatusConflict)
+	}
+	archivedMutationResponse.Body.Close()
+
+	restoreTeamResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/archive",
+		map[string]any{"archived": false},
+		impersonatedCookies[0],
+	)
+	if restoreTeamResponse.StatusCode != http.StatusOK {
+		t.Fatalf("restore team status = %d, want %d", restoreTeamResponse.StatusCode, http.StatusOK)
+	}
+	restoreTeamResponse.Body.Close()
+
+	adminDeleteTeamResponse := authRequest(
+		t,
+		app,
+		http.MethodDelete,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID,
+		nil,
+		impersonatedCookies[0],
+	)
+	if adminDeleteTeamResponse.StatusCode != http.StatusForbidden {
+		t.Fatalf("organization admin delete team status = %d, want %d", adminDeleteTeamResponse.StatusCode, http.StatusForbidden)
+	}
+	adminDeleteTeamResponse.Body.Close()
+
+	deleteTeamCreateResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams",
+		map[string]any{"name": "Disposable"},
+		adminCookies[0],
+	)
+	if deleteTeamCreateResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("create disposable team status = %d, want %d", deleteTeamCreateResponse.StatusCode, http.StatusCreated)
+	}
+	var disposableTeamBody struct {
+		Team db.Team `json:"team"`
+	}
+	decodeResponse(t, deleteTeamCreateResponse, &disposableTeamBody)
+	ownerDeleteTeamResponse := authRequest(
+		t,
+		app,
+		http.MethodDelete,
+		"/api/organizations/"+managedSlug+"/teams/"+disposableTeamBody.Team.ID,
+		nil,
+		adminCookies[0],
+	)
+	if ownerDeleteTeamResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("owner delete team status = %d, want %d", ownerDeleteTeamResponse.StatusCode, http.StatusNoContent)
+	}
+	ownerDeleteTeamResponse.Body.Close()
+
+	scopedBulkResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/not-a-team/members/bulk",
+		map[string]any{"action": "add", "userIds": []string{managedUserBody.User.ID}},
+		adminCookies[0],
+	)
+	if scopedBulkResponse.StatusCode != http.StatusNotFound {
+		t.Fatalf("scoped bulk status = %d, want %d", scopedBulkResponse.StatusCode, http.StatusNotFound)
+	}
+	scopedBulkResponse.Body.Close()
+
 	organizationAuditResponse := authRequest(
 		t,
 		app,

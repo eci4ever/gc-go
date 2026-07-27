@@ -46,6 +46,11 @@ type organizationTeamMemberRequest struct {
 	UserID string `json:"userId"`
 }
 
+type organizationBulkTeamMembersRequest struct {
+	UserIDs []string `json:"userIds"`
+	Action  string   `json:"action"`
+}
+
 type transferOwnershipRequest struct {
 	UserID string `json:"userId"`
 	Reason string `json:"reason"`
@@ -68,6 +73,7 @@ func (h *Handler) RegisterOrganizations(router fiber.Router) {
 	router.Delete("/:slug/teams/:teamId", h.deleteOrganizationWorkspaceTeam)
 	router.Get("/:slug/teams/:teamId/members", h.listOrganizationWorkspaceTeamMembers)
 	router.Post("/:slug/teams/:teamId/members", h.addOrganizationWorkspaceTeamMember)
+	router.Post("/:slug/teams/:teamId/members/bulk", h.bulkOrganizationWorkspaceTeamMembers)
 	router.Delete("/:slug/teams/:teamId/members/:userId", h.deleteOrganizationWorkspaceTeamMember)
 	router.Post("/:slug/transfer-ownership", h.transferOrganizationWorkspaceOwnership)
 	router.Post("/:slug/leave", h.leaveOrganizationWorkspace)
@@ -412,6 +418,9 @@ func (h *Handler) updateOrganizationWorkspaceTeam(c fiber.Ctx) error {
 	if err != nil {
 		return jsonError(c, fiber.StatusNotFound, "Team not found")
 	}
+	if before.ArchivedAt.Valid {
+		return jsonError(c, fiber.StatusConflict, "Restore the team before making changes")
+	}
 	team, err := h.queries.UpdateOrganizationTeam(c.Context(), db.UpdateOrganizationTeamParams{
 		ID: before.ID, OrganizationID: access.Org.ID, Name: request.Name,
 		Description: optionalText(request.Description), LeadUserID: optionalText(request.LeadUserID),
@@ -489,6 +498,15 @@ func (h *Handler) addOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
 	if err := c.Bind().Body(&request); err != nil || request.UserID == "" {
 		return jsonError(c, fiber.StatusBadRequest, "User is required")
 	}
+	team, err := h.queries.GetOrganizationTeam(c.Context(), db.GetOrganizationTeamParams{
+		ID: c.Params("teamId"), OrganizationID: access.Org.ID,
+	})
+	if err != nil {
+		return jsonError(c, fiber.StatusNotFound, "Team not found")
+	}
+	if team.ArchivedAt.Valid {
+		return jsonError(c, fiber.StatusConflict, "Restore the team before changing members")
+	}
 	id, _ := randomValue(18)
 	count, err := h.queries.AddOrganizationTeamMember(c.Context(), db.AddOrganizationTeamMemberParams{
 		ID: id, TeamID: c.Params("teamId"), UserID: request.UserID, OrganizationID: access.Org.ID,
@@ -508,6 +526,15 @@ func (h *Handler) deleteOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
 	if !ok {
 		return nil
 	}
+	team, err := h.queries.GetOrganizationTeam(c.Context(), db.GetOrganizationTeamParams{
+		ID: c.Params("teamId"), OrganizationID: access.Org.ID,
+	})
+	if err != nil {
+		return jsonError(c, fiber.StatusNotFound, "Team not found")
+	}
+	if team.ArchivedAt.Valid {
+		return jsonError(c, fiber.StatusConflict, "Restore the team before changing members")
+	}
 	count, err := h.queries.DeleteOrganizationTeamMember(c.Context(), db.DeleteOrganizationTeamMemberParams{
 		TeamID: c.Params("teamId"), OrganizationID: access.Org.ID, UserID: c.Params("userId"),
 	})
@@ -516,6 +543,99 @@ func (h *Handler) deleteOrganizationWorkspaceTeamMember(c fiber.Ctx) error {
 	}
 	h.recordOrganizationAudit(c, access, "organization_team_member_removed", "team", c.Params("teamId"), "", fiber.Map{"userId": c.Params("userId")}, nil)
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *Handler) bulkOrganizationWorkspaceTeamMembers(c fiber.Ctx) error {
+	access, ok := h.organizationAccess(c, "owner", "admin")
+	if !ok {
+		return nil
+	}
+	var request organizationBulkTeamMembersRequest
+	if err := c.Bind().Body(&request); err != nil {
+		return jsonError(c, fiber.StatusBadRequest, "Invalid request body")
+	}
+	unique := make([]string, 0, len(request.UserIDs))
+	seen := make(map[string]struct{}, len(request.UserIDs))
+	for _, id := range request.UserIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return jsonError(c, fiber.StatusBadRequest, "User IDs must not be empty")
+		}
+		if _, exists := seen[id]; !exists {
+			seen[id] = struct{}{}
+			unique = append(unique, id)
+		}
+	}
+	if len(unique) == 0 || len(unique) > 100 || (request.Action != "add" && request.Action != "remove") {
+		return jsonError(c, fiber.StatusBadRequest, "Select 1 to 100 users and a valid action")
+	}
+
+	tx, err := h.pool.Begin(c.Context())
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to update team members")
+	}
+	defer tx.Rollback(c.Context())
+	queries := h.queries.WithTx(tx)
+	team, err := queries.GetOrganizationTeam(c.Context(), db.GetOrganizationTeamParams{
+		ID: c.Params("teamId"), OrganizationID: access.Org.ID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return jsonError(c, fiber.StatusNotFound, "Team not found")
+	}
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to update team members")
+	}
+	if team.ArchivedAt.Valid {
+		return jsonError(c, fiber.StatusConflict, "Restore the team before changing members")
+	}
+
+	var changed int64
+	if request.Action == "add" {
+		count, countErr := queries.CountActiveOrganizationMembersByIDs(
+			c.Context(),
+			db.CountActiveOrganizationMembersByIDsParams{
+				OrganizationID: access.Org.ID,
+				UserIds:        unique,
+			},
+		)
+		if countErr != nil {
+			return jsonError(c, fiber.StatusInternalServerError, "Unable to validate members")
+		}
+		if int(count) != len(unique) {
+			return jsonError(c, fiber.StatusBadRequest, "All users must be active organization members")
+		}
+		prefix, _ := randomValue(18)
+		changed, err = queries.BulkAddOrganizationTeamMembers(
+			c.Context(),
+			db.BulkAddOrganizationTeamMembersParams{
+				IDPrefix:       prefix,
+				TeamID:         team.ID,
+				OrganizationID: access.Org.ID,
+				UserIds:        unique,
+			},
+		)
+	} else {
+		changed, err = queries.BulkDeleteOrganizationTeamMembers(
+			c.Context(),
+			db.BulkDeleteOrganizationTeamMembersParams{
+				TeamID:         team.ID,
+				OrganizationID: access.Org.ID,
+				UserIds:        unique,
+			},
+		)
+	}
+	if err != nil || tx.Commit(c.Context()) != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to update team members")
+	}
+	event := "organization_team_members_added"
+	if request.Action == "remove" {
+		event = "organization_team_members_removed"
+	}
+	h.recordOrganizationAudit(
+		c, access, event, "team", team.ID, "",
+		nil, fiber.Map{"action": request.Action, "requestedCount": len(unique), "changedCount": changed, "userIds": unique},
+	)
+	return c.JSON(fiber.Map{"requestedCount": len(unique), "changedCount": changed})
 }
 
 func (h *Handler) transferOrganizationWorkspaceOwnership(c fiber.Ctx) error {

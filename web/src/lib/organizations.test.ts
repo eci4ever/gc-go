@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw'
 import { describe, expect, it } from 'vitest'
 import {
   createOrganizationTeam,
+  bulkUpdateTeamMembers,
   inviteOrganizationMember,
   organizationMembersQueryOptions,
   organizationTeamsQueryOptions,
@@ -74,6 +75,13 @@ describe('organization workspace API client', () => {
         requests.push(await request.json())
         return HttpResponse.json({ team: { id: 'team-1' } }, { status: 201 })
       }),
+      http.post(
+        '/api/organizations/:slug/teams/:teamId/members/bulk',
+        async ({ request }) => {
+          requests.push(await request.json())
+          return HttpResponse.json({ requestedCount: 2, changedCount: 1 })
+        },
+      ),
     )
 
     await inviteOrganizationMember('acme', {
@@ -86,6 +94,10 @@ describe('organization workspace API client', () => {
       description: 'Core operations',
       leadUserId: 'user-2',
     })
+    await bulkUpdateTeamMembers('acme', 'team-1', {
+      action: 'add',
+      userIds: ['user-2', 'user-3'],
+    })
 
     expect(requests).toEqual([
       { email: 'member@example.com', role: 'member' },
@@ -95,6 +107,7 @@ describe('organization workspace API client', () => {
         description: 'Core operations',
         leadUserId: 'user-2',
       },
+      { action: 'add', userIds: ['user-2', 'user-3'] },
     ])
   })
 })

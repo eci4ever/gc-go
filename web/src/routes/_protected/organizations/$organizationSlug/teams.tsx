@@ -16,6 +16,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -26,6 +27,7 @@ import {
   archiveOrganizationTeam,
   createOrganizationTeam,
   organizationTeamsQueryOptions,
+  type OrganizationTeam,
 } from '@/lib/organizations'
 
 export const Route = createFileRoute(
@@ -41,6 +43,7 @@ function OrganizationTeams() {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [archiveTarget, setArchiveTarget] = useState<OrganizationTeam | null>(null)
   const refresh = () =>
     queryClient.invalidateQueries({
       queryKey: ['organizations', organizationSlug, 'teams'],
@@ -66,6 +69,7 @@ function OrganizationTeams() {
       archiveOrganizationTeam(organizationSlug, input.id, input.archived),
     onSuccess: async (_, input) => {
       toast.success(input.archived ? 'Team archived' : 'Team restored')
+      setArchiveTarget(null)
       await refresh()
     },
     onError: (error) => toast.error(error.message),
@@ -144,9 +148,7 @@ function OrganizationTeams() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() =>
-                      archive.mutate({ id: team.id, archived: !team.archivedAt })
-                    }
+                    onClick={() => setArchiveTarget(team)}
                   >
                     <ArchiveIcon />
                     {team.archivedAt ? 'Restore' : 'Archive'}
@@ -164,6 +166,44 @@ function OrganizationTeams() {
           </CardContent>
         </Card>
       )}
+      <Dialog
+        open={archiveTarget !== null}
+        onOpenChange={(open) => !open && setArchiveTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {archiveTarget?.archivedAt ? 'Restore team?' : 'Archive team?'}
+            </DialogTitle>
+            <DialogDescription>
+              {archiveTarget?.archivedAt
+                ? 'This makes the team editable again.'
+                : 'Members remain assigned, but the team becomes read-only until restored.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setArchiveTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={archive.isPending || !archiveTarget}
+              onClick={() =>
+                archiveTarget &&
+                archive.mutate({
+                  id: archiveTarget.id,
+                  archived: !archiveTarget.archivedAt,
+                })
+              }
+            >
+              {archive.isPending
+                ? 'Working…'
+                : archiveTarget?.archivedAt
+                  ? 'Restore team'
+                  : 'Archive team'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

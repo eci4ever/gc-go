@@ -263,6 +263,17 @@ export function removeTeamMember(slug: string, teamId: string, userId: string) {
   )
 }
 
+export function bulkUpdateTeamMembers(
+  slug: string,
+  teamId: string,
+  input: { action: 'add' | 'remove'; userIds: string[] },
+) {
+  return request<{ requestedCount: number; changedCount: number }>(
+    `/api/organizations/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamId)}/members/bulk`,
+    { method: 'POST', body: JSON.stringify(input) },
+  )
+}
+
 export function transferOrganizationOwnership(
   slug: string,
   userId: string,

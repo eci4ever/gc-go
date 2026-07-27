@@ -1314,6 +1314,72 @@ func (q *Queries) AdminUserGrowth(ctx context.Context) ([]AdminUserGrowthRow, er
 	return items, nil
 }
 
+const bulkAddOrganizationTeamMembers = `-- name: BulkAddOrganizationTeamMembers :execrows
+INSERT INTO team_members (id, team_id, user_id, created_at)
+SELECT
+    $1::text || '-' || row_number() OVER (ORDER BY members.user_id),
+    $2::text,
+    members.user_id,
+    (now() AT TIME ZONE 'UTC')
+FROM members
+JOIN users ON users.id = members.user_id
+JOIN teams
+  ON teams.id = $2::text
+ AND teams.organization_id = members.organization_id
+WHERE members.organization_id = $3::text
+  AND members.user_id = ANY($4::text[])
+  AND teams.archived_at IS NULL
+  AND users.deleted_at IS NULL
+  AND NOT (
+      coalesce(users.banned, FALSE)
+      AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
+  )
+ON CONFLICT (team_id, user_id) DO NOTHING
+`
+
+type BulkAddOrganizationTeamMembersParams struct {
+	IDPrefix       string   `json:"idPrefix"`
+	TeamID         string   `json:"teamId"`
+	OrganizationID string   `json:"organizationId"`
+	UserIds        []string `json:"userIds"`
+}
+
+func (q *Queries) BulkAddOrganizationTeamMembers(ctx context.Context, arg BulkAddOrganizationTeamMembersParams) (int64, error) {
+	result, err := q.db.Exec(ctx, bulkAddOrganizationTeamMembers,
+		arg.IDPrefix,
+		arg.TeamID,
+		arg.OrganizationID,
+		arg.UserIds,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const bulkDeleteOrganizationTeamMembers = `-- name: BulkDeleteOrganizationTeamMembers :execrows
+DELETE FROM team_members USING teams
+WHERE team_members.team_id = teams.id
+  AND teams.id = $1::text
+  AND teams.organization_id = $2::text
+  AND teams.archived_at IS NULL
+  AND team_members.user_id = ANY($3::text[])
+`
+
+type BulkDeleteOrganizationTeamMembersParams struct {
+	TeamID         string   `json:"teamId"`
+	OrganizationID string   `json:"organizationId"`
+	UserIds        []string `json:"userIds"`
+}
+
+func (q *Queries) BulkDeleteOrganizationTeamMembers(ctx context.Context, arg BulkDeleteOrganizationTeamMembersParams) (int64, error) {
+	result, err := q.db.Exec(ctx, bulkDeleteOrganizationTeamMembers, arg.TeamID, arg.OrganizationID, arg.UserIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const clearOrganizationFromUserSessions = `-- name: ClearOrganizationFromUserSessions :exec
 UPDATE sessions
 SET active_organization_id = NULL, active_team_id = NULL
@@ -1328,6 +1394,31 @@ type ClearOrganizationFromUserSessionsParams struct {
 func (q *Queries) ClearOrganizationFromUserSessions(ctx context.Context, arg ClearOrganizationFromUserSessionsParams) error {
 	_, err := q.db.Exec(ctx, clearOrganizationFromUserSessions, arg.UserID, arg.ActiveOrganizationID)
 	return err
+}
+
+const countActiveOrganizationMembersByIDs = `-- name: CountActiveOrganizationMembersByIDs :one
+SELECT count(*)::int
+FROM members
+JOIN users ON users.id = members.user_id
+WHERE members.organization_id = $1::text
+  AND members.user_id = ANY($2::text[])
+  AND users.deleted_at IS NULL
+  AND NOT (
+      coalesce(users.banned, FALSE)
+      AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
+  )
+`
+
+type CountActiveOrganizationMembersByIDsParams struct {
+	OrganizationID string   `json:"organizationId"`
+	UserIds        []string `json:"userIds"`
+}
+
+func (q *Queries) CountActiveOrganizationMembersByIDs(ctx context.Context, arg CountActiveOrganizationMembersByIDsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countActiveOrganizationMembersByIDs, arg.OrganizationID, arg.UserIds)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const countActiveUserSessions = `-- name: CountActiveUserSessions :one

@@ -955,6 +955,18 @@ ORDER BY teams.archived_at NULLS FIRST, teams.name;
 SELECT * FROM teams
 WHERE id = $1 AND organization_id = $2;
 
+-- name: CountActiveOrganizationMembersByIDs :one
+SELECT count(*)::int
+FROM members
+JOIN users ON users.id = members.user_id
+WHERE members.organization_id = sqlc.arg(organization_id)::text
+  AND members.user_id = ANY(sqlc.arg(user_ids)::text[])
+  AND users.deleted_at IS NULL
+  AND NOT (
+      coalesce(users.banned, FALSE)
+      AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
+  );
+
 -- name: UpdateOrganizationTeam :one
 UPDATE teams SET name = $3, description = $4, lead_user_id = $5
 WHERE id = $1 AND organization_id = $2
@@ -1005,6 +1017,36 @@ WHERE team_members.team_id = teams.id
   AND teams.id = sqlc.arg(team_id)::text
   AND teams.organization_id = sqlc.arg(organization_id)::text
   AND team_members.user_id = sqlc.arg(user_id)::text;
+
+-- name: BulkAddOrganizationTeamMembers :execrows
+INSERT INTO team_members (id, team_id, user_id, created_at)
+SELECT
+    sqlc.arg(id_prefix)::text || '-' || row_number() OVER (ORDER BY members.user_id),
+    sqlc.arg(team_id)::text,
+    members.user_id,
+    (now() AT TIME ZONE 'UTC')
+FROM members
+JOIN users ON users.id = members.user_id
+JOIN teams
+  ON teams.id = sqlc.arg(team_id)::text
+ AND teams.organization_id = members.organization_id
+WHERE members.organization_id = sqlc.arg(organization_id)::text
+  AND members.user_id = ANY(sqlc.arg(user_ids)::text[])
+  AND teams.archived_at IS NULL
+  AND users.deleted_at IS NULL
+  AND NOT (
+      coalesce(users.banned, FALSE)
+      AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
+  )
+ON CONFLICT (team_id, user_id) DO NOTHING;
+
+-- name: BulkDeleteOrganizationTeamMembers :execrows
+DELETE FROM team_members USING teams
+WHERE team_members.team_id = teams.id
+  AND teams.id = sqlc.arg(team_id)::text
+  AND teams.organization_id = sqlc.arg(organization_id)::text
+  AND teams.archived_at IS NULL
+  AND team_members.user_id = ANY(sqlc.arg(user_ids)::text[]);
 
 -- name: TransferOrganizationOwnership :exec
 UPDATE members

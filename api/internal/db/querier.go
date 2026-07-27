@@ -44,7 +44,10 @@ type Querier interface {
 	AdminUpsertOrganizationMember(ctx context.Context, arg AdminUpsertOrganizationMemberParams) error
 	AdminUpsertOrganizationOwner(ctx context.Context, arg AdminUpsertOrganizationOwnerParams) error
 	AdminUserGrowth(ctx context.Context) ([]AdminUserGrowthRow, error)
+	BulkAddOrganizationTeamMembers(ctx context.Context, arg BulkAddOrganizationTeamMembersParams) (int64, error)
+	BulkDeleteOrganizationTeamMembers(ctx context.Context, arg BulkDeleteOrganizationTeamMembersParams) (int64, error)
 	ClearOrganizationFromUserSessions(ctx context.Context, arg ClearOrganizationFromUserSessionsParams) error
+	CountActiveOrganizationMembersByIDs(ctx context.Context, arg CountActiveOrganizationMembersByIDsParams) (int32, error)
 	CountActiveUserSessions(ctx context.Context, userID string) (int32, error)
 	CountOrganizationAuditEvents(ctx context.Context, organizationID pgtype.Text) (int64, error)
 	CountOrganizationOwners(ctx context.Context, organizationID string) (int32, error)
