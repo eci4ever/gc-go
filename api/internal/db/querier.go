@@ -45,11 +45,14 @@ type Querier interface {
 	AdminUserGrowth(ctx context.Context) ([]AdminUserGrowthRow, error)
 	BulkAddOrganizationTeamMembers(ctx context.Context, arg BulkAddOrganizationTeamMembersParams) (int64, error)
 	BulkDeleteOrganizationTeamMembers(ctx context.Context, arg BulkDeleteOrganizationTeamMembersParams) (int64, error)
+	ClearActiveTeamFromSessions(ctx context.Context, activeTeamID pgtype.Text) error
+	ClearActiveTeamFromUserSessions(ctx context.Context, arg ClearActiveTeamFromUserSessionsParams) error
 	ClearOrganizationFromUserSessions(ctx context.Context, arg ClearOrganizationFromUserSessionsParams) error
 	CountActiveOrganizationMembersByIDs(ctx context.Context, arg CountActiveOrganizationMembersByIDsParams) (int32, error)
 	CountActiveUserSessions(ctx context.Context, userID string) (int32, error)
 	CountOrganizationAuditEvents(ctx context.Context, organizationID pgtype.Text) (int64, error)
 	CountOrganizationOwners(ctx context.Context, organizationID string) (int32, error)
+	CountTeamAuditEvents(ctx context.Context, arg CountTeamAuditEventsParams) (int64, error)
 	CreateAuthEvent(ctx context.Context, arg CreateAuthEventParams) error
 	CreateCredentialAccount(ctx context.Context, arg CreateCredentialAccountParams) error
 	CreateEmailVerification(ctx context.Context, arg CreateEmailVerificationParams) error
@@ -85,11 +88,13 @@ type Querier interface {
 	GetTwoFactorByUserID(ctx context.Context, userID string) (TwoFactor, error)
 	GetTwoFactorChallenge(ctx context.Context, token string) (GetTwoFactorChallengeRow, error)
 	GetUserSignInActivity(ctx context.Context, userID string) ([]GetUserSignInActivityRow, error)
+	ListAccessibleOrganizationTeams(ctx context.Context, arg ListAccessibleOrganizationTeamsParams) ([]ListAccessibleOrganizationTeamsRow, error)
 	ListOrganizationAuditEvents(ctx context.Context, arg ListOrganizationAuditEventsParams) ([]ListOrganizationAuditEventsRow, error)
 	ListOrganizationInvitations(ctx context.Context, organizationID string) ([]ListOrganizationInvitationsRow, error)
 	ListOrganizationMembers(ctx context.Context, organizationID string) ([]ListOrganizationMembersRow, error)
 	ListOrganizationTeamMembers(ctx context.Context, arg ListOrganizationTeamMembersParams) ([]ListOrganizationTeamMembersRow, error)
 	ListOrganizationTeams(ctx context.Context, arg ListOrganizationTeamsParams) ([]ListOrganizationTeamsRow, error)
+	ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]ListTeamAuditEventsRow, error)
 	ListUserOrganizations(ctx context.Context, userID string) ([]ListUserOrganizationsRow, error)
 	ListUserSessions(ctx context.Context, arg ListUserSessionsParams) ([]ListUserSessionsRow, error)
 	LockOrganizationForInvitation(ctx context.Context, id string) (string, error)
@@ -98,6 +103,7 @@ type Querier interface {
 	RevokeUserSession(ctx context.Context, arg RevokeUserSessionParams) (string, error)
 	SetOrganizationTeamArchived(ctx context.Context, arg SetOrganizationTeamArchivedParams) (Team, error)
 	SetSessionActiveOrganization(ctx context.Context, arg SetSessionActiveOrganizationParams) error
+	SetSessionActiveTeam(ctx context.Context, arg SetSessionActiveTeamParams) (int64, error)
 	TransferOrganizationOwnership(ctx context.Context, arg TransferOrganizationOwnershipParams) error
 	UpdateCredentialPassword(ctx context.Context, arg UpdateCredentialPasswordParams) error
 	UpdateOrganizationMemberRole(ctx context.Context, arg UpdateOrganizationMemberRoleParams) (Member, error)

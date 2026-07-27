@@ -26,6 +26,7 @@ import {
   inviteOrganizationMember,
   organizationMembersQueryOptions,
   organizationTeamsQueryOptions,
+  teamActivityQueryOptions,
   teamMembersQueryOptions,
   updateOrganizationTeam,
   type TeamMember,
@@ -48,6 +49,10 @@ export function TeamDetails() {
   const teams = useQuery(organizationTeamsQueryOptions(organizationSlug))
   const organizationMembers = useQuery(organizationMembersQueryOptions(organizationSlug))
   const teamMembers = useQuery(teamMembersQueryOptions(organizationSlug, teamId))
+  const [activityPage, setActivityPage] = useState(1)
+  const activity = useQuery(
+    teamActivityQueryOptions(organizationSlug, teamId, activityPage),
+  )
   const team = teams.data?.teams.find((item) => item.id === teamId)
   const canManage = organization.role === 'owner' || organization.role === 'admin'
   const canDelete = organization.role === 'owner'
@@ -384,6 +389,76 @@ export function TeamDetails() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Team activity</CardTitle>
+          <CardDescription>Recent changes made to this team.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {activity.isPending && (
+            <p className="text-sm text-muted-foreground">Loading activity…</p>
+          )}
+          {activity.isError && (
+            <p className="text-sm text-destructive">
+              Unable to load team activity.
+            </p>
+          )}
+          {!activity.isPending &&
+            !activity.isError &&
+            activity.data?.events.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No team activity yet.
+              </p>
+            )}
+          {activity.data?.events.map((event) => (
+            <div
+              key={event.id}
+              className="flex items-start justify-between gap-4 border-b pb-3 last:border-0 last:pb-0"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium">
+                  {event.eventType
+                    .replace(/^organization_team_/, '')
+                    .replaceAll('_', ' ')}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {event.actorName ?? event.actorEmail ?? 'System'}
+                </p>
+              </div>
+              <time className="shrink-0 text-xs text-muted-foreground">
+                {new Date(event.createdAt).toLocaleString()}
+              </time>
+            </div>
+          ))}
+          {activity.data && activity.data.pagination.total > activity.data.pagination.pageSize && (
+            <div className="flex items-center justify-between">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={activityPage <= 1}
+                onClick={() => setActivityPage((page) => page - 1)}
+              >
+                Previous
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Page {activityPage}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={
+                  activityPage * activity.data.pagination.pageSize >=
+                  activity.data.pagination.total
+                }
+                onClick={() => setActivityPage((page) => page + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Dialog open={confirmation !== null} onOpenChange={(open) => !open && setConfirmation(null)}>
         <DialogContent>

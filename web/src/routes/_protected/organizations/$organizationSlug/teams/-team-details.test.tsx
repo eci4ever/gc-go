@@ -86,6 +86,12 @@ function handlers(
     http.get('/api/organizations/:slug/teams/:teamId/members', () =>
       HttpResponse.json({ members: [assigned] }),
     ),
+    http.get('/api/organizations/:slug/teams/:teamId/activity', () =>
+      HttpResponse.json({
+        events: [],
+        pagination: { page: 1, pageSize: 20, total: 0 },
+      }),
+    ),
     http.post('/api/organizations/:slug/teams/:teamId/members/bulk', bulk),
   )
 }
@@ -258,5 +264,64 @@ describe('TeamDetails member management', () => {
     await waitFor(() =>
       expect(mocks.error).toHaveBeenCalledWith('A pending invitation already exists'),
     )
+  })
+
+  it('renders scoped team activity and its actor', async () => {
+    handlers()
+    server.use(
+      http.get('/api/organizations/:slug/teams/:teamId/activity', () =>
+        HttpResponse.json({
+          events: [{
+            id: 'event-1',
+            eventType: 'organization_team_member_added',
+            targetType: 'team',
+            targetId: 'team-1',
+            reason: null,
+            beforeState: null,
+            afterState: null,
+            createdAt: '2026-07-27T00:00:00Z',
+            actorId: 'user-1',
+            actorName: 'Assigned User',
+            actorEmail: 'assigned@example.com',
+          }],
+          pagination: { page: 1, pageSize: 20, total: 1 },
+        }),
+      ),
+    )
+    renderWithQuery(<TeamDetails />)
+
+    expect(await screen.findByText('member added')).toBeInTheDocument()
+    expect(screen.getAllByText('Assigned User').length).toBeGreaterThan(1)
+  })
+
+  it('renders the team activity loading and empty states', async () => {
+    handlers()
+    server.use(
+      http.get('/api/organizations/:slug/teams/:teamId/activity', async () => {
+        await delay(50)
+        return HttpResponse.json({
+          events: [],
+          pagination: { page: 1, pageSize: 20, total: 0 },
+        })
+      }),
+    )
+    renderWithQuery(<TeamDetails />)
+
+    expect(screen.getByText('Loading activity…')).toBeInTheDocument()
+    expect(await screen.findByText('No team activity yet.')).toBeInTheDocument()
+  })
+
+  it('renders a team activity error state', async () => {
+    handlers()
+    server.use(
+      http.get('/api/organizations/:slug/teams/:teamId/activity', () =>
+        HttpResponse.json({ error: 'Unavailable' }, { status: 500 }),
+      ),
+    )
+    renderWithQuery(<TeamDetails />)
+
+    expect(
+      await screen.findByText('Unable to load team activity.'),
+    ).toBeInTheDocument()
   })
 })

@@ -133,6 +133,22 @@ export function organizationTeamsQueryOptions(slug: string) {
   })
 }
 
+export function accessibleOrganizationTeamsQueryOptions(slug: string) {
+  return queryOptions({
+    queryKey: ['organizations', slug, 'accessible-teams'] as const,
+    queryFn: async () => {
+      const result = await request<{
+        teams: OrganizationTeam[]
+        activeTeamId: string | null
+      }>(
+        `/api/organizations/${encodeURIComponent(slug)}/accessible-teams`,
+      )
+      return { ...result, teams: result.teams ?? [] }
+    },
+    enabled: Boolean(slug),
+  })
+}
+
 export function teamMembersQueryOptions(slug: string, teamId: string) {
   return queryOptions({
     queryKey: ['organizations', slug, 'teams', teamId, 'members'] as const,
@@ -160,9 +176,35 @@ export function organizationAuditQueryOptions(slug: string, page = 1) {
   })
 }
 
+export function teamActivityQueryOptions(
+  slug: string,
+  teamId: string,
+  page = 1,
+) {
+  return queryOptions({
+    queryKey: ['organizations', slug, 'teams', teamId, 'activity', page] as const,
+    queryFn: async () => {
+      const result = await request<{
+        events: OrganizationAuditEvent[]
+        pagination: { page: number; pageSize: number; total: number }
+      }>(
+        `/api/organizations/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamId)}/activity?page=${page}`,
+      )
+      return { ...result, events: result.events ?? [] }
+    },
+  })
+}
+
 export function activateOrganization(slug: string) {
   return request<{ activeOrganizationId: string }>(
     `/api/organizations/${encodeURIComponent(slug)}/activate`,
+    { method: 'POST' },
+  )
+}
+
+export function activateOrganizationTeam(slug: string, teamId: string) {
+  return request<{ activeOrganizationId: string; activeTeamId: string }>(
+    `/api/organizations/${encodeURIComponent(slug)}/teams/${encodeURIComponent(teamId)}/activate`,
     { method: 'POST' },
   )
 }

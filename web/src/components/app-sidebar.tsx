@@ -27,6 +27,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   activateOrganization,
+  activateOrganizationTeam,
+  accessibleOrganizationTeamsQueryOptions,
   organizationsQueryOptions,
 } from '@/lib/organizations'
 import {
@@ -104,10 +106,24 @@ export function AppSidebar({
       (item) => item.id === organizations.data?.activeOrganizationId,
     ) ??
     organizations.data?.organizations[0]
+  const accessibleTeams = useQuery(
+    accessibleOrganizationTeamsQueryOptions(active?.slug ?? ''),
+  )
   const activate = useMutation({
     mutationFn: activateOrganization,
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['organizations'] }),
+    onError: (error) => toast.error(error.message),
+  })
+  const activateTeam = useMutation({
+    mutationFn: ({ slug, teamId }: { slug: string; teamId: string }) =>
+      activateOrganizationTeam(slug, teamId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ['organizations', active?.slug, 'accessible-teams'],
+      })
+      queryClient.invalidateQueries({ queryKey: ['auth', 'session'] })
+    },
     onError: (error) => toast.error(error.message),
   })
   const organizationNavigation = active
@@ -226,6 +242,61 @@ export function AppSidebar({
                     </SidebarMenuItem>
                   )
                 })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+        {active && (
+          <SidebarGroup className="group-data-[collapsible=icon]:px-3">
+            <SidebarGroupLabel>Teams</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {accessibleTeams.isPending && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton disabled>
+                      <Building2Icon />
+                      <span>Loading teams…</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+                {!accessibleTeams.isPending &&
+                  accessibleTeams.data?.teams.map((team) => {
+                    const to = `/organizations/${active.slug}/teams/${team.id}`
+                    return (
+                      <SidebarMenuItem key={team.id}>
+                        <SidebarMenuButton
+                          isActive={
+                            accessibleTeams.data.activeTeamId === team.id ||
+                            pathname === to
+                          }
+                          tooltip={team.name}
+                          render={
+                            <Link
+                              to={to}
+                              onClick={() =>
+                                activateTeam.mutate({
+                                  slug: active.slug,
+                                  teamId: team.id,
+                                })
+                              }
+                            />
+                          }
+                        >
+                          <UsersIcon />
+                          <span>{team.name}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    )
+                  })}
+                {!accessibleTeams.isPending &&
+                  !accessibleTeams.data?.teams.length && (
+                    <SidebarMenuItem>
+                      <SidebarMenuButton disabled>
+                        <UsersIcon />
+                        <span>No teams assigned</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  )}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

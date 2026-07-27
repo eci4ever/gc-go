@@ -897,6 +897,39 @@ UPDATE sessions
 SET active_organization_id = $2, active_team_id = NULL
 WHERE id = $1 AND user_id = $3;
 
+-- name: SetSessionActiveTeam :execrows
+UPDATE sessions
+SET active_organization_id = sqlc.arg(organization_id)::text,
+    active_team_id = sqlc.arg(team_id)::text
+WHERE sessions.id = sqlc.arg(session_id)::text
+  AND sessions.user_id = sqlc.arg(user_id)::text
+  AND EXISTS (
+      SELECT 1
+      FROM teams
+      JOIN members
+        ON members.organization_id = teams.organization_id
+       AND members.user_id = sessions.user_id
+      WHERE teams.id = sqlc.arg(team_id)::text
+        AND teams.organization_id = sqlc.arg(organization_id)::text
+        AND teams.archived_at IS NULL
+        AND (
+            members.role IN ('owner', 'admin')
+            OR EXISTS (
+                SELECT 1 FROM team_members
+                WHERE team_members.team_id = teams.id
+                  AND team_members.user_id = sessions.user_id
+            )
+        )
+  );
+
+-- name: ClearActiveTeamFromSessions :exec
+UPDATE sessions SET active_team_id = NULL
+WHERE active_team_id = $1;
+
+-- name: ClearActiveTeamFromUserSessions :exec
+UPDATE sessions SET active_team_id = NULL
+WHERE user_id = $1 AND active_team_id = $2;
+
 -- name: UpdateOrganizationWorkspace :one
 UPDATE organizations
 SET name = $2, slug = $3, logo = $4, metadata = $5
@@ -972,6 +1005,30 @@ WHERE teams.organization_id = $1
   AND (sqlc.arg(include_archived)::boolean OR teams.archived_at IS NULL)
 GROUP BY teams.id, lead.id
 ORDER BY teams.archived_at NULLS FIRST, teams.name;
+
+-- name: ListAccessibleOrganizationTeams :many
+SELECT
+    teams.id, teams.name, teams.description, teams.lead_user_id,
+    teams.created_at, teams.updated_at, teams.archived_at,
+    lead.name AS lead_name, count(DISTINCT team_members.id)::int AS member_count
+FROM teams
+JOIN members
+  ON members.organization_id = teams.organization_id
+ AND members.user_id = sqlc.arg(user_id)::text
+LEFT JOIN users AS lead ON lead.id = teams.lead_user_id
+LEFT JOIN team_members ON team_members.team_id = teams.id
+WHERE teams.organization_id = sqlc.arg(organization_id)::text
+  AND teams.archived_at IS NULL
+  AND (
+      members.role IN ('owner', 'admin')
+      OR EXISTS (
+          SELECT 1 FROM team_members AS assignment
+          WHERE assignment.team_id = teams.id
+            AND assignment.user_id = sqlc.arg(user_id)::text
+      )
+  )
+GROUP BY teams.id, lead.id
+ORDER BY teams.name;
 
 -- name: GetOrganizationTeam :one
 SELECT * FROM teams
@@ -1104,6 +1161,26 @@ LIMIT $2 OFFSET $3;
 
 -- name: CountOrganizationAuditEvents :one
 SELECT count(*) FROM auth_events WHERE organization_id = $1;
+
+-- name: ListTeamAuditEvents :many
+SELECT
+    auth_events.id, auth_events.event_type, auth_events.target_type,
+    auth_events.target_id, auth_events.reason, auth_events.before_state,
+    auth_events.after_state, auth_events.created_at,
+    users.id AS actor_id, users.name AS actor_name, users.email AS actor_email
+FROM auth_events
+LEFT JOIN users ON users.id = auth_events.user_id
+WHERE auth_events.organization_id = sqlc.arg(organization_id)::text
+  AND auth_events.target_type = 'team'
+  AND auth_events.target_id = sqlc.arg(team_id)::text
+ORDER BY auth_events.created_at DESC
+LIMIT sqlc.arg(page_limit)::int OFFSET sqlc.arg(page_offset)::int;
+
+-- name: CountTeamAuditEvents :one
+SELECT count(*) FROM auth_events
+WHERE organization_id = sqlc.arg(organization_id)::text
+  AND target_type = 'team'
+  AND target_id = sqlc.arg(team_id)::text;
 
 -- name: CountActiveUserSessions :one
 SELECT count(*)::integer

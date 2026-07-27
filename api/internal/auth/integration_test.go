@@ -1002,6 +1002,52 @@ func TestAuthFlowIntegration(t *testing.T) {
 	}
 	memberBulkResponse.Body.Close()
 
+	activateTeamResponse := authRequest(
+		t, app, http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/activate",
+		nil, impersonatedCookies[0],
+	)
+	if activateTeamResponse.StatusCode != http.StatusOK {
+		t.Fatalf("activate assigned team status = %d, want %d", activateTeamResponse.StatusCode, http.StatusOK)
+	}
+	activateTeamResponse.Body.Close()
+	activeTeamSessionResponse := authRequest(
+		t, app, http.MethodGet, "/api/auth/session", nil, impersonatedCookies[0],
+	)
+	var activeTeamSessionBody struct {
+		Session sessionResponse `json:"session"`
+	}
+	decodeResponse(t, activeTeamSessionResponse, &activeTeamSessionBody)
+	if activeTeamSessionBody.Session.ActiveTeamID == nil ||
+		*activeTeamSessionBody.Session.ActiveTeamID != teamBody.Team.ID {
+		t.Fatal("activated team was not returned in session metadata")
+	}
+	invalidTeamResponse := authRequest(
+		t, app, http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/not-a-team/activate",
+		nil, impersonatedCookies[0],
+	)
+	if invalidTeamResponse.StatusCode != http.StatusForbidden {
+		t.Fatalf("activate invalid team status = %d, want %d", invalidTeamResponse.StatusCode, http.StatusForbidden)
+	}
+	invalidTeamResponse.Body.Close()
+	accessibleTeamsResponse := authRequest(
+		t, app, http.MethodGet,
+		"/api/organizations/"+managedSlug+"/accessible-teams",
+		nil, impersonatedCookies[0],
+	)
+	if accessibleTeamsResponse.StatusCode != http.StatusOK {
+		t.Fatalf("accessible teams status = %d, want %d", accessibleTeamsResponse.StatusCode, http.StatusOK)
+	}
+	var accessibleTeamsBody struct {
+		Teams        []db.ListAccessibleOrganizationTeamsRow `json:"teams"`
+		ActiveTeamID *string                                 `json:"activeTeamId"`
+	}
+	decodeResponse(t, accessibleTeamsResponse, &accessibleTeamsBody)
+	if len(accessibleTeamsBody.Teams) != 1 || accessibleTeamsBody.ActiveTeamID == nil {
+		t.Fatal("accessible teams did not include assigned active team")
+	}
+
 	if _, err := pool.Exec(
 		context.Background(),
 		"UPDATE members SET role = 'admin' WHERE organization_id = $1 AND user_id = $2",
@@ -1022,6 +1068,16 @@ func TestAuthFlowIntegration(t *testing.T) {
 		t.Fatalf("archive team status = %d, want %d", archiveTeamResponse.StatusCode, http.StatusOK)
 	}
 	archiveTeamResponse.Body.Close()
+	archivedSessionResponse := authRequest(
+		t, app, http.MethodGet, "/api/auth/session", nil, impersonatedCookies[0],
+	)
+	var archivedSessionBody struct {
+		Session sessionResponse `json:"session"`
+	}
+	decodeResponse(t, archivedSessionResponse, &archivedSessionBody)
+	if archivedSessionBody.Session.ActiveTeamID != nil {
+		t.Fatal("archiving team did not clear active team context")
+	}
 
 	archivedMutationResponse := authRequest(
 		t,
@@ -1088,6 +1144,36 @@ func TestAuthFlowIntegration(t *testing.T) {
 	}
 	restoreTeamResponse.Body.Close()
 
+	ownerActivateTeamResponse := authRequest(
+		t, app, http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/activate",
+		nil, adminCookies[0],
+	)
+	if ownerActivateTeamResponse.StatusCode != http.StatusOK {
+		t.Fatalf("owner activate team status = %d, want %d", ownerActivateTeamResponse.StatusCode, http.StatusOK)
+	}
+	ownerActivateTeamResponse.Body.Close()
+	removeOwnerAssignmentResponse := authRequest(
+		t, app, http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/members/bulk",
+		map[string]any{"action": "remove", "userIds": []string{signupBody.User.ID}},
+		impersonatedCookies[0],
+	)
+	if removeOwnerAssignmentResponse.StatusCode != http.StatusOK {
+		t.Fatalf("remove active team assignment status = %d, want %d", removeOwnerAssignmentResponse.StatusCode, http.StatusOK)
+	}
+	removeOwnerAssignmentResponse.Body.Close()
+	removedAssignmentSessionResponse := authRequest(
+		t, app, http.MethodGet, "/api/auth/session", nil, adminCookies[0],
+	)
+	var removedAssignmentSessionBody struct {
+		Session sessionResponse `json:"session"`
+	}
+	decodeResponse(t, removedAssignmentSessionResponse, &removedAssignmentSessionBody)
+	if removedAssignmentSessionBody.Session.ActiveTeamID != nil {
+		t.Fatal("removing team assignment did not clear active team context")
+	}
+
 	adminDeleteTeamResponse := authRequest(
 		t,
 		app,
@@ -1116,6 +1202,15 @@ func TestAuthFlowIntegration(t *testing.T) {
 		Team db.Team `json:"team"`
 	}
 	decodeResponse(t, deleteTeamCreateResponse, &disposableTeamBody)
+	activateDisposableResponse := authRequest(
+		t, app, http.MethodPost,
+		"/api/organizations/"+managedSlug+"/teams/"+disposableTeamBody.Team.ID+"/activate",
+		nil, adminCookies[0],
+	)
+	if activateDisposableResponse.StatusCode != http.StatusOK {
+		t.Fatalf("activate disposable team status = %d, want %d", activateDisposableResponse.StatusCode, http.StatusOK)
+	}
+	activateDisposableResponse.Body.Close()
 	ownerDeleteTeamResponse := authRequest(
 		t,
 		app,
@@ -1128,6 +1223,16 @@ func TestAuthFlowIntegration(t *testing.T) {
 		t.Fatalf("owner delete team status = %d, want %d", ownerDeleteTeamResponse.StatusCode, http.StatusNoContent)
 	}
 	ownerDeleteTeamResponse.Body.Close()
+	deletedTeamSessionResponse := authRequest(
+		t, app, http.MethodGet, "/api/auth/session", nil, adminCookies[0],
+	)
+	var deletedTeamSessionBody struct {
+		Session sessionResponse `json:"session"`
+	}
+	decodeResponse(t, deletedTeamSessionResponse, &deletedTeamSessionBody)
+	if deletedTeamSessionBody.Session.ActiveTeamID != nil {
+		t.Fatal("deleting team did not clear active team context")
+	}
 
 	scopedBulkResponse := authRequest(
 		t,
@@ -1158,6 +1263,32 @@ func TestAuthFlowIntegration(t *testing.T) {
 		)
 	}
 	organizationAuditResponse.Body.Close()
+
+	teamActivityResponse := authRequest(
+		t, app, http.MethodGet,
+		"/api/organizations/"+managedSlug+"/teams/"+teamBody.Team.ID+"/activity?page=1&pageSize=2",
+		nil, impersonatedCookies[0],
+	)
+	if teamActivityResponse.StatusCode != http.StatusOK {
+		t.Fatalf("team activity status = %d, want %d", teamActivityResponse.StatusCode, http.StatusOK)
+	}
+	var teamActivityBody struct {
+		Events []db.ListTeamAuditEventsRow `json:"events"`
+		Pagination struct {
+			Page, PageSize int
+			Total          int64
+		} `json:"pagination"`
+	}
+	decodeResponse(t, teamActivityResponse, &teamActivityBody)
+	if len(teamActivityBody.Events) != 2 || teamActivityBody.Pagination.PageSize != 2 ||
+		teamActivityBody.Pagination.Total < 2 {
+		t.Fatal("team activity pagination did not return scoped events")
+	}
+	for _, event := range teamActivityBody.Events {
+		if !event.TargetID.Valid || event.TargetID.String != teamBody.Team.ID {
+			t.Fatal("team activity included an event from another target")
+		}
+	}
 
 	impersonatedAdminResponse := authRequest(
 		t,

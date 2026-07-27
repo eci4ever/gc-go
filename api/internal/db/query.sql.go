@@ -1374,6 +1374,31 @@ func (q *Queries) BulkDeleteOrganizationTeamMembers(ctx context.Context, arg Bul
 	return result.RowsAffected(), nil
 }
 
+const clearActiveTeamFromSessions = `-- name: ClearActiveTeamFromSessions :exec
+UPDATE sessions SET active_team_id = NULL
+WHERE active_team_id = $1
+`
+
+func (q *Queries) ClearActiveTeamFromSessions(ctx context.Context, activeTeamID pgtype.Text) error {
+	_, err := q.db.Exec(ctx, clearActiveTeamFromSessions, activeTeamID)
+	return err
+}
+
+const clearActiveTeamFromUserSessions = `-- name: ClearActiveTeamFromUserSessions :exec
+UPDATE sessions SET active_team_id = NULL
+WHERE user_id = $1 AND active_team_id = $2
+`
+
+type ClearActiveTeamFromUserSessionsParams struct {
+	UserID       string      `json:"userId"`
+	ActiveTeamID pgtype.Text `json:"activeTeamId"`
+}
+
+func (q *Queries) ClearActiveTeamFromUserSessions(ctx context.Context, arg ClearActiveTeamFromUserSessionsParams) error {
+	_, err := q.db.Exec(ctx, clearActiveTeamFromUserSessions, arg.UserID, arg.ActiveTeamID)
+	return err
+}
+
 const clearOrganizationFromUserSessions = `-- name: ClearOrganizationFromUserSessions :exec
 UPDATE sessions
 SET active_organization_id = NULL, active_team_id = NULL
@@ -1451,6 +1476,25 @@ func (q *Queries) CountOrganizationOwners(ctx context.Context, organizationID st
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err
+}
+
+const countTeamAuditEvents = `-- name: CountTeamAuditEvents :one
+SELECT count(*) FROM auth_events
+WHERE organization_id = $1::text
+  AND target_type = 'team'
+  AND target_id = $2::text
+`
+
+type CountTeamAuditEventsParams struct {
+	OrganizationID string `json:"organizationId"`
+	TeamID         string `json:"teamId"`
+}
+
+func (q *Queries) CountTeamAuditEvents(ctx context.Context, arg CountTeamAuditEventsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countTeamAuditEvents, arg.OrganizationID, arg.TeamID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const createAuthEvent = `-- name: CreateAuthEvent :exec
@@ -2540,6 +2584,78 @@ func (q *Queries) GetUserSignInActivity(ctx context.Context, userID string) ([]G
 	return items, nil
 }
 
+const listAccessibleOrganizationTeams = `-- name: ListAccessibleOrganizationTeams :many
+SELECT
+    teams.id, teams.name, teams.description, teams.lead_user_id,
+    teams.created_at, teams.updated_at, teams.archived_at,
+    lead.name AS lead_name, count(DISTINCT team_members.id)::int AS member_count
+FROM teams
+JOIN members
+  ON members.organization_id = teams.organization_id
+ AND members.user_id = $1::text
+LEFT JOIN users AS lead ON lead.id = teams.lead_user_id
+LEFT JOIN team_members ON team_members.team_id = teams.id
+WHERE teams.organization_id = $2::text
+  AND teams.archived_at IS NULL
+  AND (
+      members.role IN ('owner', 'admin')
+      OR EXISTS (
+          SELECT 1 FROM team_members AS assignment
+          WHERE assignment.team_id = teams.id
+            AND assignment.user_id = $1::text
+      )
+  )
+GROUP BY teams.id, lead.id
+ORDER BY teams.name
+`
+
+type ListAccessibleOrganizationTeamsParams struct {
+	UserID         string `json:"userId"`
+	OrganizationID string `json:"organizationId"`
+}
+
+type ListAccessibleOrganizationTeamsRow struct {
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Description pgtype.Text      `json:"description"`
+	LeadUserID  pgtype.Text      `json:"leadUserId"`
+	CreatedAt   pgtype.Timestamp `json:"createdAt"`
+	UpdatedAt   pgtype.Timestamp `json:"updatedAt"`
+	ArchivedAt  pgtype.Timestamp `json:"archivedAt"`
+	LeadName    pgtype.Text      `json:"leadName"`
+	MemberCount int32            `json:"memberCount"`
+}
+
+func (q *Queries) ListAccessibleOrganizationTeams(ctx context.Context, arg ListAccessibleOrganizationTeamsParams) ([]ListAccessibleOrganizationTeamsRow, error) {
+	rows, err := q.db.Query(ctx, listAccessibleOrganizationTeams, arg.UserID, arg.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAccessibleOrganizationTeamsRow
+	for rows.Next() {
+		var i ListAccessibleOrganizationTeamsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.LeadUserID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ArchivedAt,
+			&i.LeadName,
+			&i.MemberCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOrganizationAuditEvents = `-- name: ListOrganizationAuditEvents :many
 SELECT
     auth_events.id, auth_events.event_type, auth_events.target_type,
@@ -2833,6 +2949,79 @@ func (q *Queries) ListOrganizationTeams(ctx context.Context, arg ListOrganizatio
 	return items, nil
 }
 
+const listTeamAuditEvents = `-- name: ListTeamAuditEvents :many
+SELECT
+    auth_events.id, auth_events.event_type, auth_events.target_type,
+    auth_events.target_id, auth_events.reason, auth_events.before_state,
+    auth_events.after_state, auth_events.created_at,
+    users.id AS actor_id, users.name AS actor_name, users.email AS actor_email
+FROM auth_events
+LEFT JOIN users ON users.id = auth_events.user_id
+WHERE auth_events.organization_id = $1::text
+  AND auth_events.target_type = 'team'
+  AND auth_events.target_id = $2::text
+ORDER BY auth_events.created_at DESC
+LIMIT $4::int OFFSET $3::int
+`
+
+type ListTeamAuditEventsParams struct {
+	OrganizationID string `json:"organizationId"`
+	TeamID         string `json:"teamId"`
+	PageOffset     int32  `json:"pageOffset"`
+	PageLimit      int32  `json:"pageLimit"`
+}
+
+type ListTeamAuditEventsRow struct {
+	ID          string           `json:"id"`
+	EventType   string           `json:"eventType"`
+	TargetType  pgtype.Text      `json:"targetType"`
+	TargetID    pgtype.Text      `json:"targetId"`
+	Reason      pgtype.Text      `json:"reason"`
+	BeforeState []byte           `json:"beforeState"`
+	AfterState  []byte           `json:"afterState"`
+	CreatedAt   pgtype.Timestamp `json:"createdAt"`
+	ActorID     pgtype.Text      `json:"actorId"`
+	ActorName   pgtype.Text      `json:"actorName"`
+	ActorEmail  pgtype.Text      `json:"actorEmail"`
+}
+
+func (q *Queries) ListTeamAuditEvents(ctx context.Context, arg ListTeamAuditEventsParams) ([]ListTeamAuditEventsRow, error) {
+	rows, err := q.db.Query(ctx, listTeamAuditEvents,
+		arg.OrganizationID,
+		arg.TeamID,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTeamAuditEventsRow
+	for rows.Next() {
+		var i ListTeamAuditEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventType,
+			&i.TargetType,
+			&i.TargetID,
+			&i.Reason,
+			&i.BeforeState,
+			&i.AfterState,
+			&i.CreatedAt,
+			&i.ActorID,
+			&i.ActorName,
+			&i.ActorEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUserOrganizations = `-- name: ListUserOrganizations :many
 SELECT
     organizations.id, organizations.name, organizations.slug,
@@ -3059,6 +3248,52 @@ type SetSessionActiveOrganizationParams struct {
 func (q *Queries) SetSessionActiveOrganization(ctx context.Context, arg SetSessionActiveOrganizationParams) error {
 	_, err := q.db.Exec(ctx, setSessionActiveOrganization, arg.ID, arg.ActiveOrganizationID, arg.UserID)
 	return err
+}
+
+const setSessionActiveTeam = `-- name: SetSessionActiveTeam :execrows
+UPDATE sessions
+SET active_organization_id = $1::text,
+    active_team_id = $2::text
+WHERE sessions.id = $3::text
+  AND sessions.user_id = $4::text
+  AND EXISTS (
+      SELECT 1
+      FROM teams
+      JOIN members
+        ON members.organization_id = teams.organization_id
+       AND members.user_id = sessions.user_id
+      WHERE teams.id = $2::text
+        AND teams.organization_id = $1::text
+        AND teams.archived_at IS NULL
+        AND (
+            members.role IN ('owner', 'admin')
+            OR EXISTS (
+                SELECT 1 FROM team_members
+                WHERE team_members.team_id = teams.id
+                  AND team_members.user_id = sessions.user_id
+            )
+        )
+  )
+`
+
+type SetSessionActiveTeamParams struct {
+	OrganizationID string `json:"organizationId"`
+	TeamID         string `json:"teamId"`
+	SessionID      string `json:"sessionId"`
+	UserID         string `json:"userId"`
+}
+
+func (q *Queries) SetSessionActiveTeam(ctx context.Context, arg SetSessionActiveTeamParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setSessionActiveTeam,
+		arg.OrganizationID,
+		arg.TeamID,
+		arg.SessionID,
+		arg.UserID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const transferOrganizationOwnership = `-- name: TransferOrganizationOwnership :exec
