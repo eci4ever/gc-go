@@ -11,21 +11,38 @@ import (
 )
 
 type Querier interface {
+	AcceptOrganizationInvitation(ctx context.Context, arg AcceptOrganizationInvitationParams) error
+	AdminCancelOrganizationInvitation(ctx context.Context, arg AdminCancelOrganizationInvitationParams) (string, error)
+	AdminCountAuditEvents(ctx context.Context, search string) (int32, error)
+	AdminCountOrganizations(ctx context.Context, arg AdminCountOrganizationsParams) (int32, error)
 	AdminCountOwnedOrganizations(ctx context.Context, userID string) (int32, error)
+	AdminCountUsers(ctx context.Context, arg AdminCountUsersParams) (int32, error)
 	AdminCountUsersByRole(ctx context.Context, role string) (int32, error)
 	AdminCreateOrganization(ctx context.Context, arg AdminCreateOrganizationParams) (Organization, error)
+	AdminCreateOrganizationInvitation(ctx context.Context, arg AdminCreateOrganizationInvitationParams) (Invitation, error)
 	AdminCreateUser(ctx context.Context, arg AdminCreateUserParams) (User, error)
-	AdminDeleteOrganization(ctx context.Context, id string) (int64, error)
-	AdminDeleteUser(ctx context.Context, id string) (int64, error)
+	AdminDashboardMetrics(ctx context.Context) (AdminDashboardMetricsRow, error)
+	AdminDeleteOrganizationMember(ctx context.Context, arg AdminDeleteOrganizationMemberParams) (Member, error)
+	AdminDeletePendingOrganizationInvitations(ctx context.Context, arg AdminDeletePendingOrganizationInvitationsParams) error
 	AdminDemoteOrganizationOwners(ctx context.Context, organizationID string) error
 	AdminGetOrganization(ctx context.Context, id string) (Organization, error)
+	AdminGetOrganizationMember(ctx context.Context, arg AdminGetOrganizationMemberParams) (Member, error)
 	AdminGetUser(ctx context.Context, id string) (User, error)
-	AdminListOrganizations(ctx context.Context) ([]AdminListOrganizationsRow, error)
-	AdminListUsers(ctx context.Context) ([]AdminListUsersRow, error)
+	AdminListAuditEvents(ctx context.Context, arg AdminListAuditEventsParams) ([]AdminListAuditEventsRow, error)
+	AdminListOrganizationInvitations(ctx context.Context, organizationID string) ([]AdminListOrganizationInvitationsRow, error)
+	AdminListOrganizationMembers(ctx context.Context, organizationID string) ([]AdminListOrganizationMembersRow, error)
+	AdminListOrganizations(ctx context.Context, arg AdminListOrganizationsParams) ([]AdminListOrganizationsRow, error)
+	AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error)
+	AdminRestoreOrganization(ctx context.Context, id string) (Organization, error)
+	AdminRestoreUser(ctx context.Context, id string) (User, error)
 	AdminSetUserBan(ctx context.Context, arg AdminSetUserBanParams) (User, error)
+	AdminSoftDeleteOrganization(ctx context.Context, id string) (Organization, error)
+	AdminSoftDeleteUser(ctx context.Context, id string) (User, error)
 	AdminUpdateOrganization(ctx context.Context, arg AdminUpdateOrganizationParams) (Organization, error)
 	AdminUpdateUser(ctx context.Context, arg AdminUpdateUserParams) (User, error)
+	AdminUpsertOrganizationMember(ctx context.Context, arg AdminUpsertOrganizationMemberParams) error
 	AdminUpsertOrganizationOwner(ctx context.Context, arg AdminUpsertOrganizationOwnerParams) error
+	AdminUserGrowth(ctx context.Context) ([]AdminUserGrowthRow, error)
 	CountActiveUserSessions(ctx context.Context, userID string) (int32, error)
 	CreateAuthEvent(ctx context.Context, arg CreateAuthEventParams) error
 	CreateCredentialAccount(ctx context.Context, arg CreateCredentialAccountParams) error
@@ -43,6 +60,7 @@ type Querier interface {
 	DeleteUserEmailVerifications(ctx context.Context, identifier string) error
 	EnableTwoFactor(ctx context.Context, arg EnableTwoFactorParams) error
 	GetActiveEmailVerification(ctx context.Context, value string) (GetActiveEmailVerificationRow, error)
+	GetActiveOrganizationInvitation(ctx context.Context, arg GetActiveOrganizationInvitationParams) (GetActiveOrganizationInvitationRow, error)
 	GetActivePasswordReset(ctx context.Context, value string) (GetActivePasswordResetRow, error)
 	GetCredentialPasswordByUserID(ctx context.Context, userID string) (pgtype.Text, error)
 	GetCredentialUserByEmail(ctx context.Context, lower string) (GetCredentialUserByEmailRow, error)

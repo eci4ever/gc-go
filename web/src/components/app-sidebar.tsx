@@ -2,6 +2,8 @@ import * as React from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
 import {
   Building2Icon,
+  FileClockIcon,
+  GaugeIcon,
   LayoutDashboardIcon,
   UserRoundIcon,
   UsersIcon,
@@ -39,6 +41,11 @@ const navigation = [
 
 const adminNavigation = [
   {
+    title: 'Overview',
+    to: '/admin' as const,
+    icon: GaugeIcon,
+  },
+  {
     title: 'Users',
     to: '/admin/users' as const,
     icon: UsersIcon,
@@ -47,6 +54,11 @@ const adminNavigation = [
     title: 'Organizations',
     to: '/admin/organizations' as const,
     icon: Building2Icon,
+  },
+  {
+    title: 'Audit Log',
+    to: '/admin/audit' as const,
+    icon: FileClockIcon,
   },
 ]
 

@@ -45,11 +45,21 @@ func TestAuthFlowIntegration(t *testing.T) {
 		t.Fatalf("create test email: %v", err)
 	}
 	email := fmt.Sprintf("auth-smoke-%s@example.com", suffix)
+	managedEmail := fmt.Sprintf("managed-%s@example.com", suffix)
+	managedSlug := "managed-" + strings.ToLower(suffix)
 	t.Cleanup(func() {
 		if _, err := pool.Exec(
 			context.Background(),
-			"DELETE FROM users WHERE email = $1",
+			"DELETE FROM organizations WHERE slug = $1",
+			managedSlug,
+		); err != nil {
+			t.Errorf("clean up test organization: %v", err)
+		}
+		if _, err := pool.Exec(
+			context.Background(),
+			"DELETE FROM users WHERE email IN ($1, $2)",
 			email,
+			managedEmail,
 		); err != nil {
 			t.Errorf("clean up test user: %v", err)
 		}
@@ -706,7 +716,6 @@ func TestAuthFlowIntegration(t *testing.T) {
 		t.Fatalf("promote integration user: %v", err)
 	}
 
-	managedEmail := fmt.Sprintf("managed-%s@example.com", suffix)
 	createManagedUserResponse := authRequest(
 		t,
 		app,
@@ -741,10 +750,10 @@ func TestAuthFlowIntegration(t *testing.T) {
 		"/api/admin/organizations",
 		map[string]any{
 			"name":     "Managed Organization",
-			"slug":     "managed-" + strings.ToLower(suffix),
+			"slug":     managedSlug,
 			"logo":     "",
 			"metadata": `{"plan":"test"}`,
-			"ownerId":  managedUserBody.User.ID,
+			"ownerId":  signupBody.User.ID,
 		},
 		adminCookies[0],
 	)
@@ -760,12 +769,54 @@ func TestAuthFlowIntegration(t *testing.T) {
 	}
 	decodeResponse(t, createOrganizationResponse, &organizationBody)
 
+	paginatedUsersResponse := authRequest(
+		t,
+		app,
+		http.MethodGet,
+		"/api/admin/users?page=1&pageSize=1&search=managed",
+		nil,
+		adminCookies[0],
+	)
+	if paginatedUsersResponse.StatusCode != http.StatusOK {
+		t.Fatalf("paginated users status = %d, want %d", paginatedUsersResponse.StatusCode, http.StatusOK)
+	}
+	var paginatedUsersBody struct {
+		Users      []adminUserResponse `json:"users"`
+		Pagination struct {
+			Total int32 `json:"total"`
+		} `json:"pagination"`
+	}
+	decodeResponse(t, paginatedUsersResponse, &paginatedUsersBody)
+	if len(paginatedUsersBody.Users) != 1 || paginatedUsersBody.Pagination.Total < 1 {
+		t.Fatal("server-side user pagination did not return the managed user")
+	}
+
+	inviteResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/admin/organizations/"+organizationBody.Organization.ID+"/invitations",
+		map[string]any{"email": managedEmail, "role": "member"},
+		adminCookies[0],
+	)
+	if inviteResponse.StatusCode != http.StatusCreated {
+		t.Fatalf("organization invite status = %d, want %d", inviteResponse.StatusCode, http.StatusCreated)
+	}
+	inviteResponse.Body.Close()
+	invitationURL, err := url.Parse(emailSender.invitationURL)
+	if err != nil || invitationURL.Query().Get("token") == "" {
+		t.Fatalf("organization invitation did not contain a valid link: %v", err)
+	}
+
 	impersonateResponse := authRequest(
 		t,
 		app,
 		http.MethodPost,
 		"/api/admin/users/"+managedUserBody.User.ID+"/impersonate",
-		nil,
+		map[string]any{
+			"reason":          "Integration support test",
+			"durationMinutes": 15,
+		},
 		adminCookies[0],
 	)
 	if impersonateResponse.StatusCode != http.StatusOK {
@@ -780,6 +831,23 @@ func TestAuthFlowIntegration(t *testing.T) {
 	if len(impersonatedCookies) == 0 {
 		t.Fatal("impersonation did not create a session")
 	}
+
+	acceptInvitationResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/auth/invitations/accept",
+		map[string]any{"token": invitationURL.Query().Get("token")},
+		impersonatedCookies[0],
+	)
+	if acceptInvitationResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"accept organization invitation status = %d, want %d",
+			acceptInvitationResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	acceptInvitationResponse.Body.Close()
 
 	impersonatedAdminResponse := authRequest(
 		t,
@@ -819,22 +887,68 @@ func TestAuthFlowIntegration(t *testing.T) {
 		t.Fatal("stop impersonation did not restore an admin session")
 	}
 
-	ownedUserDeleteResponse := authRequest(
+	adminDashboardResponse := authRequest(
 		t,
 		app,
-		http.MethodDelete,
-		"/api/admin/users/"+managedUserBody.User.ID,
+		http.MethodGet,
+		"/api/admin/dashboard",
 		nil,
 		returnedAdminCookies[0],
 	)
-	if ownedUserDeleteResponse.StatusCode != http.StatusBadRequest {
+	if adminDashboardResponse.StatusCode != http.StatusOK {
 		t.Fatalf(
-			"organization owner deletion status = %d, want %d",
-			ownedUserDeleteResponse.StatusCode,
-			http.StatusBadRequest,
+			"admin dashboard status = %d, want %d",
+			adminDashboardResponse.StatusCode,
+			http.StatusOK,
 		)
 	}
-	ownedUserDeleteResponse.Body.Close()
+	adminDashboardResponse.Body.Close()
+
+	auditResponse := authRequest(
+		t,
+		app,
+		http.MethodGet,
+		"/api/admin/audit-events?page=1&pageSize=10",
+		nil,
+		returnedAdminCookies[0],
+	)
+	if auditResponse.StatusCode != http.StatusOK {
+		t.Fatalf("audit status = %d, want %d", auditResponse.StatusCode, http.StatusOK)
+	}
+	auditResponse.Body.Close()
+
+	bulkBanResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/admin/users/bulk",
+		map[string]any{
+			"action":  "ban",
+			"userIds": []string{managedUserBody.User.ID},
+			"reason":  "Integration bulk test",
+		},
+		returnedAdminCookies[0],
+	)
+	if bulkBanResponse.StatusCode != http.StatusOK {
+		t.Fatalf("bulk ban status = %d, want %d", bulkBanResponse.StatusCode, http.StatusOK)
+	}
+	bulkBanResponse.Body.Close()
+
+	bulkUnbanResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/admin/users/bulk",
+		map[string]any{
+			"action":  "unban",
+			"userIds": []string{managedUserBody.User.ID},
+		},
+		returnedAdminCookies[0],
+	)
+	if bulkUnbanResponse.StatusCode != http.StatusOK {
+		t.Fatalf("bulk unban status = %d, want %d", bulkUnbanResponse.StatusCode, http.StatusOK)
+	}
+	bulkUnbanResponse.Body.Close()
 
 	deleteOrganizationResponse := authRequest(
 		t,
@@ -850,6 +964,36 @@ func TestAuthFlowIntegration(t *testing.T) {
 			deleteOrganizationResponse.StatusCode,
 			http.StatusNoContent,
 		)
+	}
+	deleteOrganizationResponse.Body.Close()
+
+	restoreOrganizationResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/admin/organizations/"+organizationBody.Organization.ID+"/restore",
+		nil,
+		returnedAdminCookies[0],
+	)
+	if restoreOrganizationResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"admin restore organization status = %d, want %d",
+			restoreOrganizationResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	restoreOrganizationResponse.Body.Close()
+
+	deleteOrganizationResponse = authRequest(
+		t,
+		app,
+		http.MethodDelete,
+		"/api/admin/organizations/"+organizationBody.Organization.ID,
+		nil,
+		returnedAdminCookies[0],
+	)
+	if deleteOrganizationResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("second organization delete status = %d, want %d", deleteOrganizationResponse.StatusCode, http.StatusNoContent)
 	}
 	deleteOrganizationResponse.Body.Close()
 
@@ -869,12 +1013,30 @@ func TestAuthFlowIntegration(t *testing.T) {
 		)
 	}
 	deleteManagedUserResponse.Body.Close()
+
+	restoreManagedUserResponse := authRequest(
+		t,
+		app,
+		http.MethodPost,
+		"/api/admin/users/"+managedUserBody.User.ID+"/restore",
+		nil,
+		returnedAdminCookies[0],
+	)
+	if restoreManagedUserResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"admin restore user status = %d, want %d",
+			restoreManagedUserResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	restoreManagedUserResponse.Body.Close()
 }
 
 type verificationEmailRecorder struct {
 	to              string
 	verificationURL string
 	resetURL        string
+	invitationURL   string
 }
 
 func (r *verificationEmailRecorder) SendPasswordReset(
@@ -885,6 +1047,16 @@ func (r *verificationEmailRecorder) SendPasswordReset(
 ) error {
 	r.to = to
 	r.resetURL = resetURL
+	return nil
+}
+
+func (r *verificationEmailRecorder) SendOrganizationInvitation(
+	_ context.Context,
+	_ string,
+	_ string,
+	invitationURL string,
+) error {
+	r.invitationURL = invitationURL
 	return nil
 }
 

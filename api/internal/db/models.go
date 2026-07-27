@@ -25,12 +25,17 @@ type Account struct {
 }
 
 type AuthEvent struct {
-	ID        string
-	UserID    string
-	EventType string
-	IpAddress pgtype.Text
-	UserAgent pgtype.Text
-	CreatedAt pgtype.Timestamp
+	ID          string
+	UserID      string
+	EventType   string
+	IpAddress   pgtype.Text
+	UserAgent   pgtype.Text
+	CreatedAt   pgtype.Timestamp
+	TargetType  pgtype.Text
+	TargetID    pgtype.Text
+	Reason      pgtype.Text
+	BeforeState []byte
+	AfterState  []byte
 }
 
 type Invitation struct {
@@ -43,6 +48,9 @@ type Invitation struct {
 	ExpiresAt      pgtype.Timestamp
 	CreatedAt      pgtype.Timestamp
 	InviterID      string
+	Token          pgtype.Text
+	InvitedUserID  pgtype.Text
+	AcceptedAt     pgtype.Timestamp
 }
 
 type Member struct {
@@ -60,6 +68,7 @@ type Organization struct {
 	Logo      pgtype.Text
 	CreatedAt pgtype.Timestamp
 	Metadata  pgtype.Text
+	DeletedAt pgtype.Timestamp
 }
 
 type Session struct {
@@ -74,6 +83,7 @@ type Session struct {
 	ImpersonatedBy       pgtype.Text
 	ActiveOrganizationID pgtype.Text
 	ActiveTeamID         pgtype.Text
+	ImpersonationReason  pgtype.Text
 }
 
 type Team struct {
@@ -121,6 +131,7 @@ type User struct {
 	Banned        pgtype.Bool
 	BanReason     pgtype.Text
 	BanExpires    pgtype.Timestamp
+	DeletedAt     pgtype.Timestamp
 }
 
 type Verification struct {

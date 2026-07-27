@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProtectedRouteImport } from './routes/_protected'
 import { Route as AboutRouteImport } from './routes/about'
+import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
@@ -21,8 +22,10 @@ import { Route as ProtectedAccountRouteImport } from './routes/_protected/accoun
 import { Route as ProtectedAdminRouteImport } from './routes/_protected/admin'
 import { Route as ProtectedDashboardRouteImport } from './routes/_protected/dashboard'
 import { Route as ProtectedAdminIndexRouteImport } from './routes/_protected/admin/index'
+import { Route as ProtectedAdminAuditRouteImport } from './routes/_protected/admin/audit'
 import { Route as ProtectedAdminOrganizationsRouteImport } from './routes/_protected/admin/organizations'
 import { Route as ProtectedAdminUsersRouteImport } from './routes/_protected/admin/users'
+import { Route as ProtectedAdminOrganizationsOrganizationIdRouteImport } from './routes/_protected/admin/organizations/$organizationId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -36,6 +39,11 @@ const ProtectedRoute = ProtectedRouteImport.update({
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AcceptInvitationRoute = AcceptInvitationRouteImport.update({
+  id: '/accept-invitation',
+  path: '/accept-invitation',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
@@ -83,6 +91,11 @@ const ProtectedAdminIndexRoute = ProtectedAdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ProtectedAdminRoute,
 } as any)
+const ProtectedAdminAuditRoute = ProtectedAdminAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => ProtectedAdminRoute,
+} as any)
 const ProtectedAdminOrganizationsRoute =
   ProtectedAdminOrganizationsRouteImport.update({
     id: '/organizations',
@@ -94,10 +107,17 @@ const ProtectedAdminUsersRoute = ProtectedAdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => ProtectedAdminRoute,
 } as any)
+const ProtectedAdminOrganizationsOrganizationIdRoute =
+  ProtectedAdminOrganizationsOrganizationIdRouteImport.update({
+    id: '/$organizationId',
+    path: '/$organizationId',
+    getParentRoute: () => ProtectedAdminOrganizationsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/accept-invitation': typeof AcceptInvitationRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -106,13 +126,16 @@ export interface FileRoutesByFullPath {
   '/account': typeof ProtectedAccountRoute
   '/admin': typeof ProtectedAdminRouteWithChildren
   '/dashboard': typeof ProtectedDashboardRoute
-  '/admin/organizations': typeof ProtectedAdminOrganizationsRoute
+  '/admin/audit': typeof ProtectedAdminAuditRoute
+  '/admin/organizations': typeof ProtectedAdminOrganizationsRouteWithChildren
   '/admin/users': typeof ProtectedAdminUsersRoute
   '/admin/': typeof ProtectedAdminIndexRoute
+  '/admin/organizations/$organizationId': typeof ProtectedAdminOrganizationsOrganizationIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/accept-invitation': typeof AcceptInvitationRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -120,15 +143,18 @@ export interface FileRoutesByTo {
   '/verify-email': typeof VerifyEmailRoute
   '/account': typeof ProtectedAccountRoute
   '/dashboard': typeof ProtectedDashboardRoute
-  '/admin/organizations': typeof ProtectedAdminOrganizationsRoute
+  '/admin/audit': typeof ProtectedAdminAuditRoute
+  '/admin/organizations': typeof ProtectedAdminOrganizationsRouteWithChildren
   '/admin/users': typeof ProtectedAdminUsersRoute
   '/admin': typeof ProtectedAdminIndexRoute
+  '/admin/organizations/$organizationId': typeof ProtectedAdminOrganizationsOrganizationIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_protected': typeof ProtectedRouteWithChildren
   '/about': typeof AboutRoute
+  '/accept-invitation': typeof AcceptInvitationRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/reset-password': typeof ResetPasswordRoute
@@ -137,15 +163,18 @@ export interface FileRoutesById {
   '/_protected/account': typeof ProtectedAccountRoute
   '/_protected/admin': typeof ProtectedAdminRouteWithChildren
   '/_protected/dashboard': typeof ProtectedDashboardRoute
-  '/_protected/admin/organizations': typeof ProtectedAdminOrganizationsRoute
+  '/_protected/admin/audit': typeof ProtectedAdminAuditRoute
+  '/_protected/admin/organizations': typeof ProtectedAdminOrganizationsRouteWithChildren
   '/_protected/admin/users': typeof ProtectedAdminUsersRoute
   '/_protected/admin/': typeof ProtectedAdminIndexRoute
+  '/_protected/admin/organizations/$organizationId': typeof ProtectedAdminOrganizationsOrganizationIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/about'
+    | '/accept-invitation'
     | '/forgot-password'
     | '/login'
     | '/reset-password'
@@ -154,13 +183,16 @@ export interface FileRouteTypes {
     | '/account'
     | '/admin'
     | '/dashboard'
+    | '/admin/audit'
     | '/admin/organizations'
     | '/admin/users'
     | '/admin/'
+    | '/admin/organizations/$organizationId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
+    | '/accept-invitation'
     | '/forgot-password'
     | '/login'
     | '/reset-password'
@@ -168,14 +200,17 @@ export interface FileRouteTypes {
     | '/verify-email'
     | '/account'
     | '/dashboard'
+    | '/admin/audit'
     | '/admin/organizations'
     | '/admin/users'
     | '/admin'
+    | '/admin/organizations/$organizationId'
   id:
     | '__root__'
     | '/'
     | '/_protected'
     | '/about'
+    | '/accept-invitation'
     | '/forgot-password'
     | '/login'
     | '/reset-password'
@@ -184,15 +219,18 @@ export interface FileRouteTypes {
     | '/_protected/account'
     | '/_protected/admin'
     | '/_protected/dashboard'
+    | '/_protected/admin/audit'
     | '/_protected/admin/organizations'
     | '/_protected/admin/users'
     | '/_protected/admin/'
+    | '/_protected/admin/organizations/$organizationId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ProtectedRoute: typeof ProtectedRouteWithChildren
   AboutRoute: typeof AboutRoute
+  AcceptInvitationRoute: typeof AcceptInvitationRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
@@ -221,6 +259,13 @@ declare module '@tanstack/react-router' {
       path: '/about'
       fullPath: '/about'
       preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/accept-invitation': {
+      id: '/accept-invitation'
+      path: '/accept-invitation'
+      fullPath: '/accept-invitation'
+      preLoaderRoute: typeof AcceptInvitationRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/forgot-password': {
@@ -286,6 +331,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedAdminIndexRouteImport
       parentRoute: typeof ProtectedAdminRoute
     }
+    '/_protected/admin/audit': {
+      id: '/_protected/admin/audit'
+      path: '/audit'
+      fullPath: '/admin/audit'
+      preLoaderRoute: typeof ProtectedAdminAuditRouteImport
+      parentRoute: typeof ProtectedAdminRoute
+    }
     '/_protected/admin/organizations': {
       id: '/_protected/admin/organizations'
       path: '/organizations'
@@ -300,17 +352,42 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedAdminUsersRouteImport
       parentRoute: typeof ProtectedAdminRoute
     }
+    '/_protected/admin/organizations/$organizationId': {
+      id: '/_protected/admin/organizations/$organizationId'
+      path: '/$organizationId'
+      fullPath: '/admin/organizations/$organizationId'
+      preLoaderRoute: typeof ProtectedAdminOrganizationsOrganizationIdRouteImport
+      parentRoute: typeof ProtectedAdminOrganizationsRoute
+    }
   }
 }
 
+interface ProtectedAdminOrganizationsRouteChildren {
+  ProtectedAdminOrganizationsOrganizationIdRoute: typeof ProtectedAdminOrganizationsOrganizationIdRoute
+}
+
+const ProtectedAdminOrganizationsRouteChildren: ProtectedAdminOrganizationsRouteChildren =
+  {
+    ProtectedAdminOrganizationsOrganizationIdRoute:
+      ProtectedAdminOrganizationsOrganizationIdRoute,
+  }
+
+const ProtectedAdminOrganizationsRouteWithChildren =
+  ProtectedAdminOrganizationsRoute._addFileChildren(
+    ProtectedAdminOrganizationsRouteChildren,
+  )
+
 interface ProtectedAdminRouteChildren {
-  ProtectedAdminOrganizationsRoute: typeof ProtectedAdminOrganizationsRoute
+  ProtectedAdminAuditRoute: typeof ProtectedAdminAuditRoute
+  ProtectedAdminOrganizationsRoute: typeof ProtectedAdminOrganizationsRouteWithChildren
   ProtectedAdminUsersRoute: typeof ProtectedAdminUsersRoute
   ProtectedAdminIndexRoute: typeof ProtectedAdminIndexRoute
 }
 
 const ProtectedAdminRouteChildren: ProtectedAdminRouteChildren = {
-  ProtectedAdminOrganizationsRoute: ProtectedAdminOrganizationsRoute,
+  ProtectedAdminAuditRoute: ProtectedAdminAuditRoute,
+  ProtectedAdminOrganizationsRoute:
+    ProtectedAdminOrganizationsRouteWithChildren,
   ProtectedAdminUsersRoute: ProtectedAdminUsersRoute,
   ProtectedAdminIndexRoute: ProtectedAdminIndexRoute,
 }
@@ -339,6 +416,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ProtectedRoute: ProtectedRouteWithChildren,
   AboutRoute: AboutRoute,
+  AcceptInvitationRoute: AcceptInvitationRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,

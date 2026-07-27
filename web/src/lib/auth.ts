@@ -18,6 +18,7 @@ export type AuthSession = {
   userAgent: string | null
   userId: string
   impersonatedBy: string | null
+  impersonationReason: string | null
   activeOrganizationId: string | null
   activeTeamId: string | null
 }

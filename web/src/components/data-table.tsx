@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import type { Pagination } from '@/lib/admin'
 
 export function DataTable<TData>({
   columns,
@@ -28,12 +29,20 @@ export function DataTable<TData>({
   searchColumn,
   searchPlaceholder = 'Search…',
   emptyMessage = 'No results.',
+  searchValue,
+  onSearchChange,
+  pagination,
+  onPageChange,
 }: {
   columns: ColumnDef<TData>[]
   data: TData[]
   searchColumn: string
   searchPlaceholder?: string
   emptyMessage?: string
+  searchValue?: string
+  onSearchChange?: (value: string) => void
+  pagination?: Pagination
+  onPageChange?: (page: number) => void
 }) {
   const [sorting, setSorting] = useState<SortingState>([])
   const table = useReactTable({
@@ -53,11 +62,18 @@ export function DataTable<TData>({
         className="max-w-sm"
         placeholder={searchPlaceholder}
         value={
-          (table.getColumn(searchColumn)?.getFilterValue() as string) ?? ''
+          searchValue ??
+          ((table.getColumn(searchColumn)?.getFilterValue() as string) ?? '')
         }
-        onChange={(event) =>
-          table.getColumn(searchColumn)?.setFilterValue(event.target.value)
-        }
+        onChange={(event) => {
+          if (onSearchChange) {
+            onSearchChange(event.target.value)
+          } else {
+            table
+              .getColumn(searchColumn)
+              ?.setFilterValue(event.target.value)
+          }
+        }}
       />
       <div className="border">
         <Table>
@@ -106,29 +122,48 @@ export function DataTable<TData>({
       </div>
       <div className="flex items-center justify-between gap-4">
         <p className="text-xs text-muted-foreground">
-          {table.getFilteredRowModel().rows.length} result
-          {table.getFilteredRowModel().rows.length === 1 ? '' : 's'}
+          {pagination?.total ?? table.getFilteredRowModel().rows.length} result
+          {(pagination?.total ?? table.getFilteredRowModel().rows.length) === 1
+            ? ''
+            : 's'}
         </p>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="icon-sm"
             aria-label="Previous page"
-            disabled={!table.getCanPreviousPage()}
-            onClick={() => table.previousPage()}
+            disabled={
+              pagination ? pagination.page <= 1 : !table.getCanPreviousPage()
+            }
+            onClick={() =>
+              pagination && onPageChange
+                ? onPageChange(pagination.page - 1)
+                : table.previousPage()
+            }
           >
             <ChevronLeftIcon />
           </Button>
           <span className="text-xs text-muted-foreground">
-            Page {table.getState().pagination.pageIndex + 1} of{' '}
-            {Math.max(table.getPageCount(), 1)}
+            Page {pagination?.page ?? table.getState().pagination.pageIndex + 1}{' '}
+            of{' '}
+            {pagination
+              ? Math.max(Math.ceil(pagination.total / pagination.pageSize), 1)
+              : Math.max(table.getPageCount(), 1)}
           </span>
           <Button
             variant="outline"
             size="icon-sm"
             aria-label="Next page"
-            disabled={!table.getCanNextPage()}
-            onClick={() => table.nextPage()}
+            disabled={
+              pagination
+                ? pagination.page * pagination.pageSize >= pagination.total
+                : !table.getCanNextPage()
+            }
+            onClick={() =>
+              pagination && onPageChange
+                ? onPageChange(pagination.page + 1)
+                : table.nextPage()
+            }
           >
             <ChevronRightIcon />
           </Button>

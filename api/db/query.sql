@@ -37,6 +37,7 @@ SELECT
 FROM verifications
 JOIN users ON users.id = verifications.identifier
 WHERE verifications.value = $1
+  AND users.deleted_at IS NULL
   AND verifications.expires_at > (now() AT TIME ZONE 'UTC')
   AND users.email_verified = FALSE
 LIMIT 1
@@ -69,6 +70,7 @@ JOIN accounts
     ON accounts.user_id = users.id
    AND accounts.provider_id = 'credential'
 WHERE lower(users.email) = lower($1)
+  AND users.deleted_at IS NULL
   AND NOT (
       coalesce(users.banned, FALSE)
       AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
@@ -86,6 +88,7 @@ JOIN accounts
     ON accounts.user_id = users.id
    AND accounts.provider_id = 'credential'
 WHERE verifications.value = $1
+  AND users.deleted_at IS NULL
   AND verifications.expires_at > (now() AT TIME ZONE 'UTC')
   AND NOT (
       coalesce(users.banned, FALSE)
@@ -130,6 +133,7 @@ FROM users
 JOIN accounts ON accounts.user_id = users.id
 LEFT JOIN two_factors ON two_factors.user_id = users.id
 WHERE lower(users.email) = lower($1)
+  AND users.deleted_at IS NULL
   AND accounts.provider_id = 'credential'
 LIMIT 1;
 
@@ -205,6 +209,7 @@ JOIN two_factors
    AND two_factors.enabled = TRUE
 JOIN users ON users.id = two_factor_challenges.user_id
 WHERE two_factor_challenges.token = $1
+  AND users.deleted_at IS NULL
   AND two_factor_challenges.expires_at > (now() AT TIME ZONE 'UTC')
   AND NOT (
       coalesce(users.banned, FALSE)
@@ -244,6 +249,7 @@ SELECT
     sessions.user_agent,
     sessions.user_id,
     sessions.impersonated_by,
+    sessions.impersonation_reason,
     sessions.active_organization_id,
     sessions.active_team_id,
     users.name AS user_name,
@@ -254,6 +260,7 @@ SELECT
 FROM sessions
 JOIN users ON users.id = sessions.user_id
 WHERE sessions.token = $1
+  AND users.deleted_at IS NULL
   AND sessions.expires_at > (now() AT TIME ZONE 'UTC')
   AND NOT (
       coalesce(users.banned, FALSE)
@@ -272,6 +279,7 @@ SET
     image = $3,
     updated_at = (now() AT TIME ZONE 'UTC')
 WHERE id = $1
+  AND deleted_at IS NULL
 RETURNING *;
 
 -- name: GetCredentialPasswordByUserID :one
@@ -333,6 +341,7 @@ SELECT
     ), FALSE)::boolean AS banned,
     users.ban_reason,
     users.ban_expires,
+    users.deleted_at,
     users.created_at,
     count(DISTINCT sessions.id)::integer AS active_sessions,
     count(DISTINCT members.organization_id)::integer AS organization_count
@@ -341,8 +350,76 @@ LEFT JOIN sessions
     ON sessions.user_id = users.id
    AND sessions.expires_at > (now() AT TIME ZONE 'UTC')
 LEFT JOIN members ON members.user_id = users.id
+WHERE (
+    sqlc.arg(include_deleted)::boolean
+    OR users.deleted_at IS NULL
+)
+AND (
+    sqlc.arg(search)::text = ''
+    OR users.name ILIKE '%' || sqlc.arg(search)::text || '%'
+    OR users.email ILIKE '%' || sqlc.arg(search)::text || '%'
+)
+AND (
+    sqlc.arg(role)::text = ''
+    OR users.role = sqlc.arg(role)::text
+)
+AND (
+    sqlc.arg(status)::text = ''
+    OR (
+        sqlc.arg(status)::text = 'active'
+        AND users.deleted_at IS NULL
+        AND NOT (
+            coalesce(users.banned, FALSE)
+            AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
+        )
+    )
+    OR (
+        sqlc.arg(status)::text = 'banned'
+        AND users.deleted_at IS NULL
+        AND coalesce(users.banned, FALSE)
+        AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
+    )
+    OR (sqlc.arg(status)::text = 'deleted' AND users.deleted_at IS NOT NULL)
+)
 GROUP BY users.id
-ORDER BY users.created_at DESC;
+ORDER BY users.created_at DESC
+LIMIT sqlc.arg(page_size)::integer
+OFFSET sqlc.arg(page_offset)::integer;
+
+-- name: AdminCountUsers :one
+SELECT count(*)::integer
+FROM users
+WHERE (
+    sqlc.arg(include_deleted)::boolean
+    OR users.deleted_at IS NULL
+)
+AND (
+    sqlc.arg(search)::text = ''
+    OR users.name ILIKE '%' || sqlc.arg(search)::text || '%'
+    OR users.email ILIKE '%' || sqlc.arg(search)::text || '%'
+)
+AND (
+    sqlc.arg(role)::text = ''
+    OR users.role = sqlc.arg(role)::text
+)
+AND (
+    sqlc.arg(status)::text = ''
+    OR (
+        sqlc.arg(status)::text = 'active'
+        AND users.deleted_at IS NULL
+        AND NOT (
+            coalesce(users.banned, FALSE)
+            AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
+        )
+    )
+    OR (
+        sqlc.arg(status)::text = 'banned'
+        AND users.deleted_at IS NULL
+        AND coalesce(users.banned, FALSE)
+        AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
+    )
+    OR (sqlc.arg(status)::text = 'deleted' AND users.deleted_at IS NOT NULL)
+);
 
 -- name: AdminCreateUser :one
 INSERT INTO users (
@@ -374,6 +451,7 @@ SET
     image = $5,
     role = $6
 WHERE id = $1
+  AND deleted_at IS NULL
 RETURNING *;
 
 -- name: AdminSetUserBan :one
@@ -383,6 +461,7 @@ SET
     ban_reason = $3,
     ban_expires = $4
 WHERE id = $1
+  AND deleted_at IS NULL
 RETURNING *;
 
 -- name: AdminGetUser :one
@@ -390,20 +469,33 @@ SELECT *
 FROM users
 WHERE id = $1;
 
--- name: AdminDeleteUser :execrows
-DELETE FROM users
-WHERE id = $1;
+-- name: AdminSoftDeleteUser :one
+UPDATE users
+SET deleted_at = (now() AT TIME ZONE 'UTC')
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING *;
+
+-- name: AdminRestoreUser :one
+UPDATE users
+SET deleted_at = NULL
+WHERE id = $1
+  AND deleted_at IS NOT NULL
+RETURNING *;
 
 -- name: AdminCountUsersByRole :one
 SELECT count(*)::integer
 FROM users
-WHERE role = $1;
+WHERE role = $1
+  AND deleted_at IS NULL;
 
 -- name: AdminCountOwnedOrganizations :one
 SELECT count(*)::integer
 FROM members
+JOIN organizations ON organizations.id = members.organization_id
 WHERE user_id = $1
-  AND role = 'owner';
+  AND role = 'owner'
+  AND organizations.deleted_at IS NULL;
 
 -- name: CreateImpersonatedSession :one
 INSERT INTO sessions (
@@ -413,7 +505,8 @@ INSERT INTO sessions (
     ip_address,
     user_agent,
     user_id,
-    impersonated_by
+    impersonated_by,
+    impersonation_reason
 ) VALUES (
     $1,
     $2,
@@ -421,7 +514,8 @@ INSERT INTO sessions (
     $4,
     $5,
     $6,
-    $7
+    $7,
+    $8
 )
 RETURNING *;
 
@@ -433,6 +527,7 @@ SELECT
     organizations.logo,
     organizations.created_at,
     organizations.metadata,
+    organizations.deleted_at,
     owners.id AS owner_id,
     owners.name AS owner_name,
     owners.email AS owner_email,
@@ -443,8 +538,32 @@ LEFT JOIN members AS owner_members
     ON owner_members.organization_id = organizations.id
    AND owner_members.role = 'owner'
 LEFT JOIN users AS owners ON owners.id = owner_members.user_id
+WHERE (
+    sqlc.arg(include_deleted)::boolean
+    OR organizations.deleted_at IS NULL
+)
+AND (
+    sqlc.arg(search)::text = ''
+    OR organizations.name ILIKE '%' || sqlc.arg(search)::text || '%'
+    OR organizations.slug ILIKE '%' || sqlc.arg(search)::text || '%'
+)
 GROUP BY organizations.id, owners.id
-ORDER BY organizations.created_at DESC;
+ORDER BY organizations.created_at DESC
+LIMIT sqlc.arg(page_size)::integer
+OFFSET sqlc.arg(page_offset)::integer;
+
+-- name: AdminCountOrganizations :one
+SELECT count(*)::integer
+FROM organizations
+WHERE (
+    sqlc.arg(include_deleted)::boolean
+    OR deleted_at IS NULL
+)
+AND (
+    sqlc.arg(search)::text = ''
+    OR name ILIKE '%' || sqlc.arg(search)::text || '%'
+    OR slug ILIKE '%' || sqlc.arg(search)::text || '%'
+);
 
 -- name: AdminCreateOrganization :one
 INSERT INTO organizations (
@@ -472,11 +591,22 @@ SET
     logo = $4,
     metadata = $5
 WHERE id = $1
+  AND deleted_at IS NULL
 RETURNING *;
 
--- name: AdminDeleteOrganization :execrows
-DELETE FROM organizations
-WHERE id = $1;
+-- name: AdminSoftDeleteOrganization :one
+UPDATE organizations
+SET deleted_at = (now() AT TIME ZONE 'UTC')
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING *;
+
+-- name: AdminRestoreOrganization :one
+UPDATE organizations
+SET deleted_at = NULL
+WHERE id = $1
+  AND deleted_at IS NOT NULL
+RETURNING *;
 
 -- name: AdminGetOrganization :one
 SELECT *
@@ -506,20 +636,222 @@ INSERT INTO members (
 ON CONFLICT (organization_id, user_id) DO UPDATE
 SET role = 'owner';
 
+-- name: AdminListOrganizationMembers :many
+SELECT
+    members.id,
+    members.role,
+    members.created_at,
+    users.id AS user_id,
+    users.name,
+    users.email,
+    users.image,
+    users.banned,
+    users.deleted_at
+FROM members
+JOIN users ON users.id = members.user_id
+WHERE members.organization_id = $1
+ORDER BY
+    CASE members.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+    users.name;
+
+-- name: AdminUpsertOrganizationMember :exec
+INSERT INTO members (
+    id,
+    organization_id,
+    user_id,
+    role,
+    created_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    (now() AT TIME ZONE 'UTC')
+)
+ON CONFLICT (organization_id, user_id) DO UPDATE
+SET role = excluded.role;
+
+-- name: AdminGetOrganizationMember :one
+SELECT *
+FROM members
+WHERE organization_id = $1
+  AND user_id = $2;
+
+-- name: AdminDeleteOrganizationMember :one
+DELETE FROM members
+WHERE organization_id = $1
+  AND user_id = $2
+RETURNING *;
+
+-- name: AdminListOrganizationInvitations :many
+SELECT
+    invitations.id,
+    invitations.email,
+    invitations.role,
+    invitations.status,
+    invitations.expires_at,
+    invitations.created_at,
+    invitations.invited_user_id
+FROM invitations
+WHERE invitations.organization_id = $1
+ORDER BY invitations.created_at DESC;
+
+-- name: AdminDeletePendingOrganizationInvitations :exec
+DELETE FROM invitations
+WHERE organization_id = $1
+  AND lower(email) = lower(sqlc.arg(email)::text)
+  AND status = 'pending';
+
+-- name: AdminCreateOrganizationInvitation :one
+INSERT INTO invitations (
+    id,
+    organization_id,
+    email,
+    role,
+    status,
+    expires_at,
+    inviter_id,
+    token,
+    invited_user_id
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    'pending',
+    $5,
+    $6,
+    $7,
+    $8
+)
+RETURNING *;
+
+-- name: GetActiveOrganizationInvitation :one
+SELECT
+    invitations.id,
+    invitations.organization_id,
+    invitations.role,
+    organizations.name AS organization_name
+FROM invitations
+JOIN organizations ON organizations.id = invitations.organization_id
+WHERE invitations.token = sqlc.arg(token)::text
+  AND lower(invitations.email) = lower(sqlc.arg(email)::text)
+  AND invitations.status = 'pending'
+  AND invitations.expires_at > (now() AT TIME ZONE 'UTC')
+  AND organizations.deleted_at IS NULL
+LIMIT 1
+FOR UPDATE;
+
+-- name: AcceptOrganizationInvitation :exec
+UPDATE invitations
+SET
+    status = 'accepted',
+    accepted_at = (now() AT TIME ZONE 'UTC'),
+    invited_user_id = $2
+WHERE id = $1;
+
+-- name: AdminCancelOrganizationInvitation :one
+UPDATE invitations
+SET status = 'cancelled'
+WHERE id = $1
+  AND organization_id = $2
+  AND status = 'pending'
+RETURNING id;
+
 -- name: CreateAuthEvent :exec
 INSERT INTO auth_events (
     id,
     user_id,
     event_type,
     ip_address,
-    user_agent
+    user_agent,
+    target_type,
+    target_id,
+    reason,
+    before_state,
+    after_state
 ) VALUES (
     $1,
     $2,
     $3,
     $4,
-    $5
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10
 );
+
+-- name: AdminListAuditEvents :many
+SELECT
+    auth_events.id,
+    auth_events.event_type,
+    auth_events.created_at,
+    auth_events.ip_address,
+    auth_events.user_agent,
+    auth_events.target_type,
+    auth_events.target_id,
+    auth_events.reason,
+    auth_events.before_state,
+    auth_events.after_state,
+    actors.id AS actor_id,
+    actors.name AS actor_name,
+    actors.email AS actor_email
+FROM auth_events
+JOIN users AS actors ON actors.id = auth_events.user_id
+WHERE (
+    sqlc.arg(search)::text = ''
+    OR actors.name ILIKE '%' || sqlc.arg(search)::text || '%'
+    OR actors.email ILIKE '%' || sqlc.arg(search)::text || '%'
+    OR auth_events.event_type ILIKE '%' || sqlc.arg(search)::text || '%'
+    OR coalesce(auth_events.target_id, '') ILIKE '%' || sqlc.arg(search)::text || '%'
+)
+ORDER BY auth_events.created_at DESC
+LIMIT sqlc.arg(page_size)::integer
+OFFSET sqlc.arg(page_offset)::integer;
+
+-- name: AdminCountAuditEvents :one
+SELECT count(*)::integer
+FROM auth_events
+JOIN users AS actors ON actors.id = auth_events.user_id
+WHERE (
+    sqlc.arg(search)::text = ''
+    OR actors.name ILIKE '%' || sqlc.arg(search)::text || '%'
+    OR actors.email ILIKE '%' || sqlc.arg(search)::text || '%'
+    OR auth_events.event_type ILIKE '%' || sqlc.arg(search)::text || '%'
+    OR coalesce(auth_events.target_id, '') ILIKE '%' || sqlc.arg(search)::text || '%'
+);
+
+-- name: AdminDashboardMetrics :one
+SELECT
+    (SELECT count(*)::integer FROM users WHERE deleted_at IS NULL) AS total_users,
+    (
+        SELECT count(*)::integer
+        FROM users
+        WHERE deleted_at IS NULL
+          AND coalesce(banned, FALSE)
+          AND (ban_expires IS NULL OR ban_expires > (now() AT TIME ZONE 'UTC'))
+    ) AS banned_users,
+    (SELECT count(*)::integer FROM users WHERE deleted_at IS NULL AND email_verified) AS verified_users,
+    (SELECT count(*)::integer FROM organizations WHERE deleted_at IS NULL) AS total_organizations,
+    (SELECT count(*)::integer FROM sessions WHERE expires_at > (now() AT TIME ZONE 'UTC')) AS active_sessions,
+    (SELECT count(*)::integer FROM invitations WHERE status = 'pending' AND expires_at > (now() AT TIME ZONE 'UTC')) AS pending_invitations;
+
+-- name: AdminUserGrowth :many
+SELECT
+    days.day::date AS day,
+    count(users.id)::integer AS users
+FROM generate_series(
+    ((now() AT TIME ZONE 'UTC')::date - interval '29 days')::date,
+    (now() AT TIME ZONE 'UTC')::date,
+    interval '1 day'
+) AS days(day)
+LEFT JOIN users
+    ON users.created_at >= days.day
+   AND users.created_at < days.day + interval '1 day'
+GROUP BY days.day
+ORDER BY days.day;
 
 -- name: CountActiveUserSessions :one
 SELECT count(*)::integer

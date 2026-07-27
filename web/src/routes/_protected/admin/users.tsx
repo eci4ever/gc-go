@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createFileRoute,
@@ -53,13 +59,18 @@ import {
 } from '@/components/ui/select'
 import {
   adminUsersQueryOptions,
+  adminUsersKey,
+  adminOrganizationsQueryOptions,
+  bulkAdminUsers,
   createAdminUser,
   deleteAdminUser,
   impersonateAdminUser,
+  restoreAdminUser,
   setAdminUserBan,
   updateAdminUser,
   type AdminUser,
   type AdminUserInput,
+  type AdminOrganization,
 } from '@/lib/admin'
 import { sessionQueryOptions } from '@/lib/auth'
 
@@ -69,16 +80,37 @@ export const Route = createFileRoute('/_protected/admin/users')({
 
 function AdminUsersPage() {
   const { user: currentUser } = Route.useRouteContext()
-  const usersQuery = useQuery(adminUsersQueryOptions)
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const deferredSearch = useDeferredValue(search)
+  const usersQuery = useQuery(
+    adminUsersQueryOptions({
+      page,
+      pageSize: 20,
+      search: deferredSearch,
+      role: roleFilter === 'all' ? '' : roleFilter,
+      status: statusFilter === 'all' ? '' : statusFilter,
+      includeDeleted: true,
+    }),
+  )
+  const organizationsQuery = useQuery(
+    adminOrganizationsQueryOptions({ pageSize: 100 }),
+  )
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const router = useRouter()
   const [editor, setEditor] = useState<AdminUser | 'new' | null>(null)
   const [banTarget, setBanTarget] = useState<AdminUser | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null)
+  const [impersonateTarget, setImpersonateTarget] =
+    useState<AdminUser | null>(null)
+  const [selectedIDs, setSelectedIDs] = useState<string[]>([])
+  const [bulkOpen, setBulkOpen] = useState(false)
 
   const refreshUsers = () =>
-    queryClient.invalidateQueries({ queryKey: adminUsersQueryOptions.queryKey })
+    queryClient.invalidateQueries({ queryKey: adminUsersKey })
 
   const saveMutation = useMutation({
     mutationFn: ({
@@ -129,8 +161,34 @@ function AdminUsersPage() {
     },
     onError: (error) => toast.error(error.message),
   })
+  const restoreMutation = useMutation({
+    mutationFn: (user: AdminUser) => restoreAdminUser(user.id),
+    onSuccess: async () => {
+      await refreshUsers()
+      toast.success('User restored')
+    },
+    onError: (error) => toast.error(error.message),
+  })
+  const bulkMutation = useMutation({
+    mutationFn: bulkAdminUsers,
+    onSuccess: async (result) => {
+      setBulkOpen(false)
+      setSelectedIDs([])
+      await refreshUsers()
+      toast.success(`${result.updated} users updated`)
+    },
+    onError: (error) => toast.error(error.message),
+  })
   const impersonateMutation = useMutation({
-    mutationFn: impersonateAdminUser,
+    mutationFn: ({
+      userId,
+      reason,
+      durationMinutes,
+    }: {
+      userId: string
+      reason: string
+      durationMinutes: number
+    }) => impersonateAdminUser(userId, { reason, durationMinutes }),
     onSuccess: async (session) => {
       queryClient.setQueryData(sessionQueryOptions.queryKey, session)
       await navigate({ to: '/dashboard' })
@@ -142,6 +200,41 @@ function AdminUsersPage() {
 
   const columns = useMemo<ColumnDef<AdminUser>[]>(
     () => [
+      {
+        id: 'select',
+        header: () => {
+          const pageIDs = (usersQuery.data?.users ?? []).map((user) => user.id)
+          return (
+            <Checkbox
+              aria-label="Select page"
+              checked={
+                pageIDs.length > 0 &&
+                pageIDs.every((id) => selectedIDs.includes(id))
+              }
+              onCheckedChange={(checked) =>
+                setSelectedIDs((current) =>
+                  checked
+                    ? [...new Set([...current, ...pageIDs])]
+                    : current.filter((id) => !pageIDs.includes(id)),
+                )
+              }
+            />
+          )
+        },
+        cell: ({ row }) => (
+          <Checkbox
+            aria-label={`Select ${row.original.name}`}
+            checked={selectedIDs.includes(row.original.id)}
+            onCheckedChange={(checked) =>
+              setSelectedIDs((current) =>
+                checked
+                  ? [...current, row.original.id]
+                  : current.filter((id) => id !== row.original.id),
+              )
+            }
+          />
+        ),
+      },
       {
         accessorKey: 'email',
         header: ({ column }) => (
@@ -192,8 +285,18 @@ function AdminUsersPage() {
         accessorKey: 'banned',
         header: 'Status',
         cell: ({ row }) => (
-          <Badge variant={row.original.banned ? 'destructive' : 'secondary'}>
-            {row.original.banned ? 'Banned' : 'Active'}
+          <Badge
+            variant={
+              row.original.deletedAt || row.original.banned
+                ? 'destructive'
+                : 'secondary'
+            }
+          >
+            {row.original.deletedAt
+              ? 'Deleted'
+              : row.original.banned
+                ? 'Banned'
+                : 'Active'}
           </Badge>
         ),
       },
@@ -218,6 +321,18 @@ function AdminUsersPage() {
         cell: ({ row }) => {
           const user = row.original
           const isSelf = user.id === currentUser.id
+          if (user.deletedAt) {
+            return (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={restoreMutation.isPending}
+                onClick={() => restoreMutation.mutate(user)}
+              >
+                Restore
+              </Button>
+            )
+          }
           return (
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -238,7 +353,7 @@ function AdminUsersPage() {
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   disabled={isSelf || user.banned}
-                  onClick={() => impersonateMutation.mutate(user.id)}
+                  onClick={() => setImpersonateTarget(user)}
                 >
                   <UserRoundCogIcon />
                   Impersonate
@@ -265,7 +380,13 @@ function AdminUsersPage() {
         },
       },
     ],
-    [currentUser.id, impersonateMutation],
+    [
+      currentUser.id,
+      impersonateMutation,
+      restoreMutation,
+      selectedIDs,
+      usersQuery.data?.users,
+    ],
   )
 
   return (
@@ -283,10 +404,62 @@ function AdminUsersPage() {
         </Button>
       </div>
 
+      {selectedIDs.length ? (
+        <div className="flex items-center justify-between border bg-muted/30 px-4 py-3">
+          <p className="text-sm">{selectedIDs.length} users selected</p>
+          <Button variant="outline" onClick={() => setBulkOpen(true)}>
+            Bulk action
+          </Button>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap gap-3">
+        <Select
+          value={roleFilter}
+          onValueChange={(value) => {
+            setRoleFilter(value ?? 'all')
+            setPage(1)
+          }}
+        >
+          <SelectTrigger className="w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All roles</SelectItem>
+            <SelectItem value="user">Users</SelectItem>
+            <SelectItem value="admin">Platform admins</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={statusFilter}
+          onValueChange={(value) => {
+            setStatusFilter(value ?? 'all')
+            setPage(1)
+          }}
+        >
+          <SelectTrigger className="w-44">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="banned">Banned</SelectItem>
+            <SelectItem value="deleted">Deleted</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       <DataTable
         columns={columns}
         data={usersQuery.data?.users ?? []}
         searchColumn="email"
+        searchValue={search}
+        onSearchChange={(value) => {
+          setSearch(value)
+          setPage(1)
+        }}
+        pagination={usersQuery.data?.pagination}
+        onPageChange={setPage}
         searchPlaceholder="Search by email…"
         emptyMessage={
           usersQuery.isPending ? 'Loading users…' : 'No users found.'
@@ -312,6 +485,29 @@ function AdminUsersPage() {
         pending={deleteMutation.isPending}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         onConfirm={(user) => deleteMutation.mutate(user)}
+      />
+      <ImpersonationDialog
+        user={impersonateTarget}
+        pending={impersonateMutation.isPending}
+        onOpenChange={(open) => !open && setImpersonateTarget(null)}
+        onSubmit={(userId, reason, durationMinutes) =>
+          impersonateMutation.mutate({ userId, reason, durationMinutes })
+        }
+      />
+      <BulkUsersDialog
+        open={bulkOpen}
+        count={selectedIDs.length}
+        organizations={organizationsQuery.data?.organizations ?? []}
+        pending={bulkMutation.isPending}
+        onOpenChange={setBulkOpen}
+        onSubmit={(action, reason, organizationId) =>
+          bulkMutation.mutate({
+            action,
+            userIds: selectedIDs,
+            reason,
+            organizationId,
+          })
+        }
       />
     </div>
   )
@@ -538,8 +734,8 @@ function ConfirmDeleteDialog({
         <DialogHeader>
           <DialogTitle>Delete user</DialogTitle>
           <DialogDescription>
-            Permanently delete {user?.email} and all related sessions,
-            memberships, and credentials. This cannot be undone.
+            Soft-delete {user?.email} and revoke all sessions. The account can
+            be restored later unless its email is reused.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -554,6 +750,187 @@ function ConfirmDeleteDialog({
             {pending ? 'Deleting…' : 'Delete user'}
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ImpersonationDialog({
+  user,
+  pending,
+  onOpenChange,
+  onSubmit,
+}: {
+  user: AdminUser | null
+  pending: boolean
+  onOpenChange: (open: boolean) => void
+  onSubmit: (userId: string, reason: string, durationMinutes: number) => void
+}) {
+  const [duration, setDuration] = useState('30')
+  return (
+    <Dialog open={user !== null} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (!user) return
+            const form = new FormData(event.currentTarget)
+            onSubmit(
+              user.id,
+              String(form.get('reason') ?? ''),
+              Number(duration),
+            )
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Impersonate {user?.name}</DialogTitle>
+            <DialogDescription>
+              This action is audited. Platform Admin access is disabled while
+              impersonating.
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup className="my-6 gap-5">
+            <Field>
+              <FieldLabel htmlFor="impersonation-reason">Reason</FieldLabel>
+              <Input
+                id="impersonation-reason"
+                name="reason"
+                placeholder="Investigating support ticket…"
+                required
+              />
+            </Field>
+            <Field>
+              <FieldLabel>Duration</FieldLabel>
+              <Select value={duration} onValueChange={(value) => setDuration(value ?? '30')}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="15">15 minutes</SelectItem>
+                  <SelectItem value="30">30 minutes</SelectItem>
+                  <SelectItem value="60">60 minutes</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={pending}>
+              {pending ? 'Starting…' : 'Start impersonation'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function BulkUsersDialog({
+  open,
+  count,
+  organizations,
+  pending,
+  onOpenChange,
+  onSubmit,
+}: {
+  open: boolean
+  count: number
+  organizations: AdminOrganization[]
+  pending: boolean
+  onOpenChange: (open: boolean) => void
+  onSubmit: (action: string, reason: string, organizationId: string) => void
+}) {
+  const [action, setAction] = useState('verify')
+  const [organizationID, setOrganizationID] = useState('')
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            const form = new FormData(event.currentTarget)
+            onSubmit(
+              action,
+              String(form.get('reason') ?? ''),
+              organizationID,
+            )
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Bulk update {count} users</DialogTitle>
+            <DialogDescription>
+              All selected users are updated atomically. If one fails, no
+              changes are applied.
+            </DialogDescription>
+          </DialogHeader>
+          <FieldGroup className="my-6 gap-5">
+            <Field>
+              <FieldLabel>Action</FieldLabel>
+              <Select value={action} onValueChange={(value) => setAction(value ?? 'verify')}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="verify">Verify email</SelectItem>
+                  <SelectItem value="ban">Ban users</SelectItem>
+                  <SelectItem value="unban">Unban users</SelectItem>
+                  <SelectItem value="assign_organization">
+                    Assign organization
+                  </SelectItem>
+                  <SelectItem value="delete">Soft delete</SelectItem>
+                  <SelectItem value="restore">Restore</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            {action === 'ban' ? (
+              <Field>
+                <FieldLabel htmlFor="bulk-reason">Reason</FieldLabel>
+                <Input id="bulk-reason" name="reason" required />
+              </Field>
+            ) : null}
+            {action === 'assign_organization' ? (
+              <Field>
+                <FieldLabel>Organization</FieldLabel>
+                <Select
+                  value={organizationID}
+                  onValueChange={(value) => setOrganizationID(value ?? '')}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select organization" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {organizations
+                      .filter((organization) => !organization.deletedAt)
+                      .map((organization) => (
+                        <SelectItem
+                          key={organization.id}
+                          value={organization.id}
+                        >
+                          {organization.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            ) : null}
+          </FieldGroup>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={
+                pending ||
+                (action === 'assign_organization' && !organizationID)
+              }
+            >
+              {pending ? 'Updating…' : 'Apply bulk action'}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   )

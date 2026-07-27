@@ -72,8 +72,12 @@ function ProtectedLayout() {
       ? 'Account'
       : pathname === '/admin/users'
         ? 'Users'
-        : pathname === '/admin/organizations'
+        : pathname.startsWith('/admin/organizations')
           ? 'Organizations'
+          : pathname === '/admin/audit'
+            ? 'Audit Log'
+            : pathname === '/admin'
+              ? 'Platform Overview'
           : 'Dashboard'
 
   return (
@@ -91,6 +95,9 @@ function ProtectedLayout() {
           <div className="flex items-center justify-between gap-4 border-b bg-muted px-4 py-2 text-xs">
             <span>
               You are impersonating <strong>{user.email}</strong>.
+              {session.impersonationReason
+                ? ` Reason: ${session.impersonationReason}.`
+                : ''}
             </span>
             <Button
               variant="outline"

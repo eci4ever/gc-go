@@ -42,6 +42,12 @@ type VerificationEmailSender interface {
 		name string,
 		resetURL string,
 	) error
+	SendOrganizationInvitation(
+		ctx context.Context,
+		to string,
+		organizationName string,
+		invitationURL string,
+	) error
 }
 
 type Handler struct {
@@ -88,6 +94,7 @@ type sessionResponse struct {
 	ImpersonatedBy       *string   `json:"impersonatedBy"`
 	ActiveOrganizationID *string   `json:"activeOrganizationId"`
 	ActiveTeamID         *string   `json:"activeTeamId"`
+	ImpersonationReason  *string   `json:"impersonationReason"`
 }
 
 type managedSessionResponse struct {
@@ -135,6 +142,7 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Post("/forgot-password", h.forgotPassword)
 	router.Post("/reset-password", h.resetPassword)
 	router.Post("/impersonation/stop", h.stopImpersonation)
+	router.Post("/invitations/accept", h.acceptOrganizationInvitation)
 }
 
 func (h *Handler) signup(c fiber.Ctx) error {
@@ -706,6 +714,7 @@ func sessionFromModel(session db.Session) sessionResponse {
 		ImpersonatedBy:       stringPointer(session.ImpersonatedBy),
 		ActiveOrganizationID: stringPointer(session.ActiveOrganizationID),
 		ActiveTeamID:         stringPointer(session.ActiveTeamID),
+		ImpersonationReason:  stringPointer(session.ImpersonationReason),
 	}
 }
 
@@ -721,6 +730,7 @@ func sessionFromRow(row db.GetSessionUserRow) sessionResponse {
 		ImpersonatedBy:       stringPointer(row.ImpersonatedBy),
 		ActiveOrganizationID: stringPointer(row.ActiveOrganizationID),
 		ActiveTeamID:         stringPointer(row.ActiveTeamID),
+		ImpersonationReason:  stringPointer(row.ImpersonationReason),
 	}
 }
 

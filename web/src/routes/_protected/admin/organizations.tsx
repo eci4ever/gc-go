@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
   ArrowUpDownIcon,
@@ -9,6 +15,7 @@ import {
   PencilIcon,
   PlusIcon,
   Trash2Icon,
+  UsersIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -48,9 +55,12 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import {
   adminOrganizationsQueryOptions,
+  adminOrganizationsKey,
   adminUsersQueryOptions,
+  adminUsersKey,
   createAdminOrganization,
   deleteAdminOrganization,
+  restoreAdminOrganization,
   updateAdminOrganization,
   type AdminOrganization,
   type AdminOrganizationInput,
@@ -62,8 +72,18 @@ export const Route = createFileRoute('/_protected/admin/organizations')({
 })
 
 function AdminOrganizationsPage() {
-  const organizationsQuery = useQuery(adminOrganizationsQueryOptions)
-  const usersQuery = useQuery(adminUsersQueryOptions)
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const deferredSearch = useDeferredValue(search)
+  const organizationsQuery = useQuery(
+    adminOrganizationsQueryOptions({
+      page,
+      pageSize: 20,
+      search: deferredSearch,
+      includeDeleted: true,
+    }),
+  )
+  const usersQuery = useQuery(adminUsersQueryOptions({ pageSize: 100 }))
   const queryClient = useQueryClient()
   const [editor, setEditor] = useState<AdminOrganization | 'new' | null>(null)
   const [deleteTarget, setDeleteTarget] =
@@ -71,7 +91,7 @@ function AdminOrganizationsPage() {
 
   const refreshOrganizations = () =>
     queryClient.invalidateQueries({
-      queryKey: adminOrganizationsQueryOptions.queryKey,
+      queryKey: adminOrganizationsKey,
     })
   const saveMutation = useMutation({
     mutationFn: ({
@@ -89,7 +109,7 @@ function AdminOrganizationsPage() {
       await Promise.all([
         refreshOrganizations(),
         queryClient.invalidateQueries({
-          queryKey: adminUsersQueryOptions.queryKey,
+          queryKey: adminUsersKey,
         }),
       ])
       toast.success(
@@ -108,10 +128,19 @@ function AdminOrganizationsPage() {
       await Promise.all([
         refreshOrganizations(),
         queryClient.invalidateQueries({
-          queryKey: adminUsersQueryOptions.queryKey,
+          queryKey: adminUsersKey,
         }),
       ])
       toast.success('Organization deleted')
+    },
+    onError: (error) => toast.error(error.message),
+  })
+  const restoreMutation = useMutation({
+    mutationFn: (organization: AdminOrganization) =>
+      restoreAdminOrganization(organization.id),
+    onSuccess: async () => {
+      await refreshOrganizations()
+      toast.success('Organization restored')
     },
     onError: (error) => toast.error(error.message),
   })
@@ -145,7 +174,12 @@ function AdminOrganizationsPage() {
                 </AvatarFallback>
               </Avatar>
               <div>
-                <p className="font-medium">{organization.name}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium">{organization.name}</p>
+                  {organization.deletedAt ? (
+                    <Badge variant="destructive">Deleted</Badge>
+                  ) : null}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   /{organization.slug}
                 </p>
@@ -183,7 +217,16 @@ function AdminOrganizationsPage() {
       },
       {
         id: 'actions',
-        cell: ({ row }) => (
+        cell: ({ row }) =>
+          row.original.deletedAt ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => restoreMutation.mutate(row.original)}
+            >
+              Restore
+            </Button>
+          ) : (
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
@@ -197,6 +240,17 @@ function AdminOrganizationsPage() {
               <MoreHorizontalIcon />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                render={
+                  <Link
+                    to="/admin/organizations/$organizationId"
+                    params={{ organizationId: row.original.id }}
+                  />
+                }
+              >
+                <UsersIcon />
+                Manage members
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setEditor(row.original)}>
                 <PencilIcon />
                 Edit organization
@@ -211,10 +265,10 @@ function AdminOrganizationsPage() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        ),
+          ),
       },
     ],
-    [],
+    [restoreMutation],
   )
 
   return (
@@ -238,6 +292,13 @@ function AdminOrganizationsPage() {
         columns={columns}
         data={organizationsQuery.data?.organizations ?? []}
         searchColumn="name"
+        searchValue={search}
+        onSearchChange={(value) => {
+          setSearch(value)
+          setPage(1)
+        }}
+        pagination={organizationsQuery.data?.pagination}
+        onPageChange={setPage}
         searchPlaceholder="Search organizations…"
         emptyMessage={
           organizationsQuery.isPending
@@ -414,8 +475,8 @@ function DeleteOrganizationDialog({
           </div>
           <DialogTitle>Delete organization</DialogTitle>
           <DialogDescription>
-            Permanently delete {organization?.name}, including its teams,
-            memberships, and invitations. This cannot be undone.
+            Soft-delete {organization?.name}. Existing data is preserved and
+            the organization can be restored later.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

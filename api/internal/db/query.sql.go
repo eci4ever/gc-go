@@ -11,11 +11,99 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const acceptOrganizationInvitation = `-- name: AcceptOrganizationInvitation :exec
+UPDATE invitations
+SET
+    status = 'accepted',
+    accepted_at = (now() AT TIME ZONE 'UTC'),
+    invited_user_id = $2
+WHERE id = $1
+`
+
+type AcceptOrganizationInvitationParams struct {
+	ID            string
+	InvitedUserID pgtype.Text
+}
+
+func (q *Queries) AcceptOrganizationInvitation(ctx context.Context, arg AcceptOrganizationInvitationParams) error {
+	_, err := q.db.Exec(ctx, acceptOrganizationInvitation, arg.ID, arg.InvitedUserID)
+	return err
+}
+
+const adminCancelOrganizationInvitation = `-- name: AdminCancelOrganizationInvitation :one
+UPDATE invitations
+SET status = 'cancelled'
+WHERE id = $1
+  AND organization_id = $2
+  AND status = 'pending'
+RETURNING id
+`
+
+type AdminCancelOrganizationInvitationParams struct {
+	ID             string
+	OrganizationID string
+}
+
+func (q *Queries) AdminCancelOrganizationInvitation(ctx context.Context, arg AdminCancelOrganizationInvitationParams) (string, error) {
+	row := q.db.QueryRow(ctx, adminCancelOrganizationInvitation, arg.ID, arg.OrganizationID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
+const adminCountAuditEvents = `-- name: AdminCountAuditEvents :one
+SELECT count(*)::integer
+FROM auth_events
+JOIN users AS actors ON actors.id = auth_events.user_id
+WHERE (
+    $1::text = ''
+    OR actors.name ILIKE '%' || $1::text || '%'
+    OR actors.email ILIKE '%' || $1::text || '%'
+    OR auth_events.event_type ILIKE '%' || $1::text || '%'
+    OR coalesce(auth_events.target_id, '') ILIKE '%' || $1::text || '%'
+)
+`
+
+func (q *Queries) AdminCountAuditEvents(ctx context.Context, search string) (int32, error) {
+	row := q.db.QueryRow(ctx, adminCountAuditEvents, search)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const adminCountOrganizations = `-- name: AdminCountOrganizations :one
+SELECT count(*)::integer
+FROM organizations
+WHERE (
+    $1::boolean
+    OR deleted_at IS NULL
+)
+AND (
+    $2::text = ''
+    OR name ILIKE '%' || $2::text || '%'
+    OR slug ILIKE '%' || $2::text || '%'
+)
+`
+
+type AdminCountOrganizationsParams struct {
+	IncludeDeleted bool
+	Search         string
+}
+
+func (q *Queries) AdminCountOrganizations(ctx context.Context, arg AdminCountOrganizationsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, adminCountOrganizations, arg.IncludeDeleted, arg.Search)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const adminCountOwnedOrganizations = `-- name: AdminCountOwnedOrganizations :one
 SELECT count(*)::integer
 FROM members
+JOIN organizations ON organizations.id = members.organization_id
 WHERE user_id = $1
   AND role = 'owner'
+  AND organizations.deleted_at IS NULL
 `
 
 func (q *Queries) AdminCountOwnedOrganizations(ctx context.Context, userID string) (int32, error) {
@@ -25,10 +113,66 @@ func (q *Queries) AdminCountOwnedOrganizations(ctx context.Context, userID strin
 	return column_1, err
 }
 
+const adminCountUsers = `-- name: AdminCountUsers :one
+SELECT count(*)::integer
+FROM users
+WHERE (
+    $1::boolean
+    OR users.deleted_at IS NULL
+)
+AND (
+    $2::text = ''
+    OR users.name ILIKE '%' || $2::text || '%'
+    OR users.email ILIKE '%' || $2::text || '%'
+)
+AND (
+    $3::text = ''
+    OR users.role = $3::text
+)
+AND (
+    $4::text = ''
+    OR (
+        $4::text = 'active'
+        AND users.deleted_at IS NULL
+        AND NOT (
+            coalesce(users.banned, FALSE)
+            AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
+        )
+    )
+    OR (
+        $4::text = 'banned'
+        AND users.deleted_at IS NULL
+        AND coalesce(users.banned, FALSE)
+        AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
+    )
+    OR ($4::text = 'deleted' AND users.deleted_at IS NOT NULL)
+)
+`
+
+type AdminCountUsersParams struct {
+	IncludeDeleted bool
+	Search         string
+	Role           string
+	Status         string
+}
+
+func (q *Queries) AdminCountUsers(ctx context.Context, arg AdminCountUsersParams) (int32, error) {
+	row := q.db.QueryRow(ctx, adminCountUsers,
+		arg.IncludeDeleted,
+		arg.Search,
+		arg.Role,
+		arg.Status,
+	)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const adminCountUsersByRole = `-- name: AdminCountUsersByRole :one
 SELECT count(*)::integer
 FROM users
 WHERE role = $1
+  AND deleted_at IS NULL
 `
 
 func (q *Queries) AdminCountUsersByRole(ctx context.Context, role string) (int32, error) {
@@ -54,7 +198,7 @@ INSERT INTO organizations (
     (now() AT TIME ZONE 'UTC'),
     $5
 )
-RETURNING id, name, slug, logo, created_at, metadata
+RETURNING id, name, slug, logo, created_at, metadata, deleted_at
 `
 
 type AdminCreateOrganizationParams struct {
@@ -81,6 +225,72 @@ func (q *Queries) AdminCreateOrganization(ctx context.Context, arg AdminCreateOr
 		&i.Logo,
 		&i.CreatedAt,
 		&i.Metadata,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const adminCreateOrganizationInvitation = `-- name: AdminCreateOrganizationInvitation :one
+INSERT INTO invitations (
+    id,
+    organization_id,
+    email,
+    role,
+    status,
+    expires_at,
+    inviter_id,
+    token,
+    invited_user_id
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    'pending',
+    $5,
+    $6,
+    $7,
+    $8
+)
+RETURNING id, organization_id, email, role, team_id, status, expires_at, created_at, inviter_id, token, invited_user_id, accepted_at
+`
+
+type AdminCreateOrganizationInvitationParams struct {
+	ID             string
+	OrganizationID string
+	Email          string
+	Role           pgtype.Text
+	ExpiresAt      pgtype.Timestamp
+	InviterID      string
+	Token          pgtype.Text
+	InvitedUserID  pgtype.Text
+}
+
+func (q *Queries) AdminCreateOrganizationInvitation(ctx context.Context, arg AdminCreateOrganizationInvitationParams) (Invitation, error) {
+	row := q.db.QueryRow(ctx, adminCreateOrganizationInvitation,
+		arg.ID,
+		arg.OrganizationID,
+		arg.Email,
+		arg.Role,
+		arg.ExpiresAt,
+		arg.InviterID,
+		arg.Token,
+		arg.InvitedUserID,
+	)
+	var i Invitation
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Email,
+		&i.Role,
+		&i.TeamID,
+		&i.Status,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.InviterID,
+		&i.Token,
+		&i.InvitedUserID,
+		&i.AcceptedAt,
 	)
 	return i, err
 }
@@ -101,7 +311,7 @@ INSERT INTO users (
     $5,
     $6
 )
-RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires
+RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires, deleted_at
 `
 
 type AdminCreateUserParams struct {
@@ -135,34 +345,90 @@ func (q *Queries) AdminCreateUser(ctx context.Context, arg AdminCreateUserParams
 		&i.Banned,
 		&i.BanReason,
 		&i.BanExpires,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
-const adminDeleteOrganization = `-- name: AdminDeleteOrganization :execrows
-DELETE FROM organizations
-WHERE id = $1
+const adminDashboardMetrics = `-- name: AdminDashboardMetrics :one
+SELECT
+    (SELECT count(*)::integer FROM users WHERE deleted_at IS NULL) AS total_users,
+    (
+        SELECT count(*)::integer
+        FROM users
+        WHERE deleted_at IS NULL
+          AND coalesce(banned, FALSE)
+          AND (ban_expires IS NULL OR ban_expires > (now() AT TIME ZONE 'UTC'))
+    ) AS banned_users,
+    (SELECT count(*)::integer FROM users WHERE deleted_at IS NULL AND email_verified) AS verified_users,
+    (SELECT count(*)::integer FROM organizations WHERE deleted_at IS NULL) AS total_organizations,
+    (SELECT count(*)::integer FROM sessions WHERE expires_at > (now() AT TIME ZONE 'UTC')) AS active_sessions,
+    (SELECT count(*)::integer FROM invitations WHERE status = 'pending' AND expires_at > (now() AT TIME ZONE 'UTC')) AS pending_invitations
 `
 
-func (q *Queries) AdminDeleteOrganization(ctx context.Context, id string) (int64, error) {
-	result, err := q.db.Exec(ctx, adminDeleteOrganization, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+type AdminDashboardMetricsRow struct {
+	TotalUsers         int32
+	BannedUsers        int32
+	VerifiedUsers      int32
+	TotalOrganizations int32
+	ActiveSessions     int32
+	PendingInvitations int32
 }
 
-const adminDeleteUser = `-- name: AdminDeleteUser :execrows
-DELETE FROM users
-WHERE id = $1
+func (q *Queries) AdminDashboardMetrics(ctx context.Context) (AdminDashboardMetricsRow, error) {
+	row := q.db.QueryRow(ctx, adminDashboardMetrics)
+	var i AdminDashboardMetricsRow
+	err := row.Scan(
+		&i.TotalUsers,
+		&i.BannedUsers,
+		&i.VerifiedUsers,
+		&i.TotalOrganizations,
+		&i.ActiveSessions,
+		&i.PendingInvitations,
+	)
+	return i, err
+}
+
+const adminDeleteOrganizationMember = `-- name: AdminDeleteOrganizationMember :one
+DELETE FROM members
+WHERE organization_id = $1
+  AND user_id = $2
+RETURNING id, organization_id, user_id, role, created_at
 `
 
-func (q *Queries) AdminDeleteUser(ctx context.Context, id string) (int64, error) {
-	result, err := q.db.Exec(ctx, adminDeleteUser, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+type AdminDeleteOrganizationMemberParams struct {
+	OrganizationID string
+	UserID         string
+}
+
+func (q *Queries) AdminDeleteOrganizationMember(ctx context.Context, arg AdminDeleteOrganizationMemberParams) (Member, error) {
+	row := q.db.QueryRow(ctx, adminDeleteOrganizationMember, arg.OrganizationID, arg.UserID)
+	var i Member
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const adminDeletePendingOrganizationInvitations = `-- name: AdminDeletePendingOrganizationInvitations :exec
+DELETE FROM invitations
+WHERE organization_id = $1
+  AND lower(email) = lower($2::text)
+  AND status = 'pending'
+`
+
+type AdminDeletePendingOrganizationInvitationsParams struct {
+	OrganizationID string
+	Email          string
+}
+
+func (q *Queries) AdminDeletePendingOrganizationInvitations(ctx context.Context, arg AdminDeletePendingOrganizationInvitationsParams) error {
+	_, err := q.db.Exec(ctx, adminDeletePendingOrganizationInvitations, arg.OrganizationID, arg.Email)
+	return err
 }
 
 const adminDemoteOrganizationOwners = `-- name: AdminDemoteOrganizationOwners :exec
@@ -178,7 +444,7 @@ func (q *Queries) AdminDemoteOrganizationOwners(ctx context.Context, organizatio
 }
 
 const adminGetOrganization = `-- name: AdminGetOrganization :one
-SELECT id, name, slug, logo, created_at, metadata
+SELECT id, name, slug, logo, created_at, metadata, deleted_at
 FROM organizations
 WHERE id = $1
 `
@@ -193,12 +459,38 @@ func (q *Queries) AdminGetOrganization(ctx context.Context, id string) (Organiza
 		&i.Logo,
 		&i.CreatedAt,
 		&i.Metadata,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const adminGetOrganizationMember = `-- name: AdminGetOrganizationMember :one
+SELECT id, organization_id, user_id, role, created_at
+FROM members
+WHERE organization_id = $1
+  AND user_id = $2
+`
+
+type AdminGetOrganizationMemberParams struct {
+	OrganizationID string
+	UserID         string
+}
+
+func (q *Queries) AdminGetOrganizationMember(ctx context.Context, arg AdminGetOrganizationMemberParams) (Member, error) {
+	row := q.db.QueryRow(ctx, adminGetOrganizationMember, arg.OrganizationID, arg.UserID)
+	var i Member
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.UserID,
+		&i.Role,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const adminGetUser = `-- name: AdminGetUser :one
-SELECT id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires
+SELECT id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires, deleted_at
 FROM users
 WHERE id = $1
 `
@@ -218,8 +510,207 @@ func (q *Queries) AdminGetUser(ctx context.Context, id string) (User, error) {
 		&i.Banned,
 		&i.BanReason,
 		&i.BanExpires,
+		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const adminListAuditEvents = `-- name: AdminListAuditEvents :many
+SELECT
+    auth_events.id,
+    auth_events.event_type,
+    auth_events.created_at,
+    auth_events.ip_address,
+    auth_events.user_agent,
+    auth_events.target_type,
+    auth_events.target_id,
+    auth_events.reason,
+    auth_events.before_state,
+    auth_events.after_state,
+    actors.id AS actor_id,
+    actors.name AS actor_name,
+    actors.email AS actor_email
+FROM auth_events
+JOIN users AS actors ON actors.id = auth_events.user_id
+WHERE (
+    $1::text = ''
+    OR actors.name ILIKE '%' || $1::text || '%'
+    OR actors.email ILIKE '%' || $1::text || '%'
+    OR auth_events.event_type ILIKE '%' || $1::text || '%'
+    OR coalesce(auth_events.target_id, '') ILIKE '%' || $1::text || '%'
+)
+ORDER BY auth_events.created_at DESC
+LIMIT $3::integer
+OFFSET $2::integer
+`
+
+type AdminListAuditEventsParams struct {
+	Search     string
+	PageOffset int32
+	PageSize   int32
+}
+
+type AdminListAuditEventsRow struct {
+	ID          string
+	EventType   string
+	CreatedAt   pgtype.Timestamp
+	IpAddress   pgtype.Text
+	UserAgent   pgtype.Text
+	TargetType  pgtype.Text
+	TargetID    pgtype.Text
+	Reason      pgtype.Text
+	BeforeState []byte
+	AfterState  []byte
+	ActorID     string
+	ActorName   string
+	ActorEmail  string
+}
+
+func (q *Queries) AdminListAuditEvents(ctx context.Context, arg AdminListAuditEventsParams) ([]AdminListAuditEventsRow, error) {
+	rows, err := q.db.Query(ctx, adminListAuditEvents, arg.Search, arg.PageOffset, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminListAuditEventsRow
+	for rows.Next() {
+		var i AdminListAuditEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventType,
+			&i.CreatedAt,
+			&i.IpAddress,
+			&i.UserAgent,
+			&i.TargetType,
+			&i.TargetID,
+			&i.Reason,
+			&i.BeforeState,
+			&i.AfterState,
+			&i.ActorID,
+			&i.ActorName,
+			&i.ActorEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminListOrganizationInvitations = `-- name: AdminListOrganizationInvitations :many
+SELECT
+    invitations.id,
+    invitations.email,
+    invitations.role,
+    invitations.status,
+    invitations.expires_at,
+    invitations.created_at,
+    invitations.invited_user_id
+FROM invitations
+WHERE invitations.organization_id = $1
+ORDER BY invitations.created_at DESC
+`
+
+type AdminListOrganizationInvitationsRow struct {
+	ID            string
+	Email         string
+	Role          pgtype.Text
+	Status        string
+	ExpiresAt     pgtype.Timestamp
+	CreatedAt     pgtype.Timestamp
+	InvitedUserID pgtype.Text
+}
+
+func (q *Queries) AdminListOrganizationInvitations(ctx context.Context, organizationID string) ([]AdminListOrganizationInvitationsRow, error) {
+	rows, err := q.db.Query(ctx, adminListOrganizationInvitations, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminListOrganizationInvitationsRow
+	for rows.Next() {
+		var i AdminListOrganizationInvitationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Role,
+			&i.Status,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.InvitedUserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminListOrganizationMembers = `-- name: AdminListOrganizationMembers :many
+SELECT
+    members.id,
+    members.role,
+    members.created_at,
+    users.id AS user_id,
+    users.name,
+    users.email,
+    users.image,
+    users.banned,
+    users.deleted_at
+FROM members
+JOIN users ON users.id = members.user_id
+WHERE members.organization_id = $1
+ORDER BY
+    CASE members.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END,
+    users.name
+`
+
+type AdminListOrganizationMembersRow struct {
+	ID        string
+	Role      string
+	CreatedAt pgtype.Timestamp
+	UserID    string
+	Name      string
+	Email     string
+	Image     pgtype.Text
+	Banned    pgtype.Bool
+	DeletedAt pgtype.Timestamp
+}
+
+func (q *Queries) AdminListOrganizationMembers(ctx context.Context, organizationID string) ([]AdminListOrganizationMembersRow, error) {
+	rows, err := q.db.Query(ctx, adminListOrganizationMembers, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminListOrganizationMembersRow
+	for rows.Next() {
+		var i AdminListOrganizationMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Role,
+			&i.CreatedAt,
+			&i.UserID,
+			&i.Name,
+			&i.Email,
+			&i.Image,
+			&i.Banned,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const adminListOrganizations = `-- name: AdminListOrganizations :many
@@ -230,6 +721,7 @@ SELECT
     organizations.logo,
     organizations.created_at,
     organizations.metadata,
+    organizations.deleted_at,
     owners.id AS owner_id,
     owners.name AS owner_name,
     owners.email AS owner_email,
@@ -240,9 +732,27 @@ LEFT JOIN members AS owner_members
     ON owner_members.organization_id = organizations.id
    AND owner_members.role = 'owner'
 LEFT JOIN users AS owners ON owners.id = owner_members.user_id
+WHERE (
+    $1::boolean
+    OR organizations.deleted_at IS NULL
+)
+AND (
+    $2::text = ''
+    OR organizations.name ILIKE '%' || $2::text || '%'
+    OR organizations.slug ILIKE '%' || $2::text || '%'
+)
 GROUP BY organizations.id, owners.id
 ORDER BY organizations.created_at DESC
+LIMIT $4::integer
+OFFSET $3::integer
 `
+
+type AdminListOrganizationsParams struct {
+	IncludeDeleted bool
+	Search         string
+	PageOffset     int32
+	PageSize       int32
+}
 
 type AdminListOrganizationsRow struct {
 	ID          string
@@ -251,14 +761,20 @@ type AdminListOrganizationsRow struct {
 	Logo        pgtype.Text
 	CreatedAt   pgtype.Timestamp
 	Metadata    pgtype.Text
+	DeletedAt   pgtype.Timestamp
 	OwnerID     pgtype.Text
 	OwnerName   pgtype.Text
 	OwnerEmail  pgtype.Text
 	MemberCount int32
 }
 
-func (q *Queries) AdminListOrganizations(ctx context.Context) ([]AdminListOrganizationsRow, error) {
-	rows, err := q.db.Query(ctx, adminListOrganizations)
+func (q *Queries) AdminListOrganizations(ctx context.Context, arg AdminListOrganizationsParams) ([]AdminListOrganizationsRow, error) {
+	rows, err := q.db.Query(ctx, adminListOrganizations,
+		arg.IncludeDeleted,
+		arg.Search,
+		arg.PageOffset,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -273,6 +789,7 @@ func (q *Queries) AdminListOrganizations(ctx context.Context) ([]AdminListOrgani
 			&i.Logo,
 			&i.CreatedAt,
 			&i.Metadata,
+			&i.DeletedAt,
 			&i.OwnerID,
 			&i.OwnerName,
 			&i.OwnerEmail,
@@ -302,6 +819,7 @@ SELECT
     ), FALSE)::boolean AS banned,
     users.ban_reason,
     users.ban_expires,
+    users.deleted_at,
     users.created_at,
     count(DISTINCT sessions.id)::integer AS active_sessions,
     count(DISTINCT members.organization_id)::integer AS organization_count
@@ -310,9 +828,51 @@ LEFT JOIN sessions
     ON sessions.user_id = users.id
    AND sessions.expires_at > (now() AT TIME ZONE 'UTC')
 LEFT JOIN members ON members.user_id = users.id
+WHERE (
+    $1::boolean
+    OR users.deleted_at IS NULL
+)
+AND (
+    $2::text = ''
+    OR users.name ILIKE '%' || $2::text || '%'
+    OR users.email ILIKE '%' || $2::text || '%'
+)
+AND (
+    $3::text = ''
+    OR users.role = $3::text
+)
+AND (
+    $4::text = ''
+    OR (
+        $4::text = 'active'
+        AND users.deleted_at IS NULL
+        AND NOT (
+            coalesce(users.banned, FALSE)
+            AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
+        )
+    )
+    OR (
+        $4::text = 'banned'
+        AND users.deleted_at IS NULL
+        AND coalesce(users.banned, FALSE)
+        AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
+    )
+    OR ($4::text = 'deleted' AND users.deleted_at IS NOT NULL)
+)
 GROUP BY users.id
 ORDER BY users.created_at DESC
+LIMIT $6::integer
+OFFSET $5::integer
 `
+
+type AdminListUsersParams struct {
+	IncludeDeleted bool
+	Search         string
+	Role           string
+	Status         string
+	PageOffset     int32
+	PageSize       int32
+}
 
 type AdminListUsersRow struct {
 	ID                string
@@ -324,13 +884,21 @@ type AdminListUsersRow struct {
 	Banned            bool
 	BanReason         pgtype.Text
 	BanExpires        pgtype.Timestamp
+	DeletedAt         pgtype.Timestamp
 	CreatedAt         pgtype.Timestamp
 	ActiveSessions    int32
 	OrganizationCount int32
 }
 
-func (q *Queries) AdminListUsers(ctx context.Context) ([]AdminListUsersRow, error) {
-	rows, err := q.db.Query(ctx, adminListUsers)
+func (q *Queries) AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error) {
+	rows, err := q.db.Query(ctx, adminListUsers,
+		arg.IncludeDeleted,
+		arg.Search,
+		arg.Role,
+		arg.Status,
+		arg.PageOffset,
+		arg.PageSize,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -348,6 +916,7 @@ func (q *Queries) AdminListUsers(ctx context.Context) ([]AdminListUsersRow, erro
 			&i.Banned,
 			&i.BanReason,
 			&i.BanExpires,
+			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.ActiveSessions,
 			&i.OrganizationCount,
@@ -362,6 +931,57 @@ func (q *Queries) AdminListUsers(ctx context.Context) ([]AdminListUsersRow, erro
 	return items, nil
 }
 
+const adminRestoreOrganization = `-- name: AdminRestoreOrganization :one
+UPDATE organizations
+SET deleted_at = NULL
+WHERE id = $1
+  AND deleted_at IS NOT NULL
+RETURNING id, name, slug, logo, created_at, metadata, deleted_at
+`
+
+func (q *Queries) AdminRestoreOrganization(ctx context.Context, id string) (Organization, error) {
+	row := q.db.QueryRow(ctx, adminRestoreOrganization, id)
+	var i Organization
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Logo,
+		&i.CreatedAt,
+		&i.Metadata,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const adminRestoreUser = `-- name: AdminRestoreUser :one
+UPDATE users
+SET deleted_at = NULL
+WHERE id = $1
+  AND deleted_at IS NOT NULL
+RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires, deleted_at
+`
+
+func (q *Queries) AdminRestoreUser(ctx context.Context, id string) (User, error) {
+	row := q.db.QueryRow(ctx, adminRestoreUser, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Email,
+		&i.EmailVerified,
+		&i.Image,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Role,
+		&i.Banned,
+		&i.BanReason,
+		&i.BanExpires,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const adminSetUserBan = `-- name: AdminSetUserBan :one
 UPDATE users
 SET
@@ -369,7 +989,8 @@ SET
     ban_reason = $3,
     ban_expires = $4
 WHERE id = $1
-RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires
+  AND deleted_at IS NULL
+RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires, deleted_at
 `
 
 type AdminSetUserBanParams struct {
@@ -399,6 +1020,58 @@ func (q *Queries) AdminSetUserBan(ctx context.Context, arg AdminSetUserBanParams
 		&i.Banned,
 		&i.BanReason,
 		&i.BanExpires,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const adminSoftDeleteOrganization = `-- name: AdminSoftDeleteOrganization :one
+UPDATE organizations
+SET deleted_at = (now() AT TIME ZONE 'UTC')
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING id, name, slug, logo, created_at, metadata, deleted_at
+`
+
+func (q *Queries) AdminSoftDeleteOrganization(ctx context.Context, id string) (Organization, error) {
+	row := q.db.QueryRow(ctx, adminSoftDeleteOrganization, id)
+	var i Organization
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.Logo,
+		&i.CreatedAt,
+		&i.Metadata,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const adminSoftDeleteUser = `-- name: AdminSoftDeleteUser :one
+UPDATE users
+SET deleted_at = (now() AT TIME ZONE 'UTC')
+WHERE id = $1
+  AND deleted_at IS NULL
+RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires, deleted_at
+`
+
+func (q *Queries) AdminSoftDeleteUser(ctx context.Context, id string) (User, error) {
+	row := q.db.QueryRow(ctx, adminSoftDeleteUser, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Email,
+		&i.EmailVerified,
+		&i.Image,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Role,
+		&i.Banned,
+		&i.BanReason,
+		&i.BanExpires,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -411,7 +1084,8 @@ SET
     logo = $4,
     metadata = $5
 WHERE id = $1
-RETURNING id, name, slug, logo, created_at, metadata
+  AND deleted_at IS NULL
+RETURNING id, name, slug, logo, created_at, metadata, deleted_at
 `
 
 type AdminUpdateOrganizationParams struct {
@@ -438,6 +1112,7 @@ func (q *Queries) AdminUpdateOrganization(ctx context.Context, arg AdminUpdateOr
 		&i.Logo,
 		&i.CreatedAt,
 		&i.Metadata,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -454,7 +1129,8 @@ SET
     image = $5,
     role = $6
 WHERE id = $1
-RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires
+  AND deleted_at IS NULL
+RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires, deleted_at
 `
 
 type AdminUpdateUserParams struct {
@@ -488,8 +1164,44 @@ func (q *Queries) AdminUpdateUser(ctx context.Context, arg AdminUpdateUserParams
 		&i.Banned,
 		&i.BanReason,
 		&i.BanExpires,
+		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const adminUpsertOrganizationMember = `-- name: AdminUpsertOrganizationMember :exec
+INSERT INTO members (
+    id,
+    organization_id,
+    user_id,
+    role,
+    created_at
+) VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    (now() AT TIME ZONE 'UTC')
+)
+ON CONFLICT (organization_id, user_id) DO UPDATE
+SET role = excluded.role
+`
+
+type AdminUpsertOrganizationMemberParams struct {
+	ID             string
+	OrganizationID string
+	UserID         string
+	Role           string
+}
+
+func (q *Queries) AdminUpsertOrganizationMember(ctx context.Context, arg AdminUpsertOrganizationMemberParams) error {
+	_, err := q.db.Exec(ctx, adminUpsertOrganizationMember,
+		arg.ID,
+		arg.OrganizationID,
+		arg.UserID,
+		arg.Role,
+	)
+	return err
 }
 
 const adminUpsertOrganizationOwner = `-- name: AdminUpsertOrganizationOwner :exec
@@ -521,6 +1233,47 @@ func (q *Queries) AdminUpsertOrganizationOwner(ctx context.Context, arg AdminUps
 	return err
 }
 
+const adminUserGrowth = `-- name: AdminUserGrowth :many
+SELECT
+    days.day::date AS day,
+    count(users.id)::integer AS users
+FROM generate_series(
+    ((now() AT TIME ZONE 'UTC')::date - interval '29 days')::date,
+    (now() AT TIME ZONE 'UTC')::date,
+    interval '1 day'
+) AS days(day)
+LEFT JOIN users
+    ON users.created_at >= days.day
+   AND users.created_at < days.day + interval '1 day'
+GROUP BY days.day
+ORDER BY days.day
+`
+
+type AdminUserGrowthRow struct {
+	Day   pgtype.Date
+	Users int32
+}
+
+func (q *Queries) AdminUserGrowth(ctx context.Context) ([]AdminUserGrowthRow, error) {
+	rows, err := q.db.Query(ctx, adminUserGrowth)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AdminUserGrowthRow
+	for rows.Next() {
+		var i AdminUserGrowthRow
+		if err := rows.Scan(&i.Day, &i.Users); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countActiveUserSessions = `-- name: CountActiveUserSessions :one
 SELECT count(*)::integer
 FROM sessions
@@ -541,22 +1294,37 @@ INSERT INTO auth_events (
     user_id,
     event_type,
     ip_address,
-    user_agent
+    user_agent,
+    target_type,
+    target_id,
+    reason,
+    before_state,
+    after_state
 ) VALUES (
     $1,
     $2,
     $3,
     $4,
-    $5
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10
 )
 `
 
 type CreateAuthEventParams struct {
-	ID        string
-	UserID    string
-	EventType string
-	IpAddress pgtype.Text
-	UserAgent pgtype.Text
+	ID          string
+	UserID      string
+	EventType   string
+	IpAddress   pgtype.Text
+	UserAgent   pgtype.Text
+	TargetType  pgtype.Text
+	TargetID    pgtype.Text
+	Reason      pgtype.Text
+	BeforeState []byte
+	AfterState  []byte
 }
 
 func (q *Queries) CreateAuthEvent(ctx context.Context, arg CreateAuthEventParams) error {
@@ -566,6 +1334,11 @@ func (q *Queries) CreateAuthEvent(ctx context.Context, arg CreateAuthEventParams
 		arg.EventType,
 		arg.IpAddress,
 		arg.UserAgent,
+		arg.TargetType,
+		arg.TargetID,
+		arg.Reason,
+		arg.BeforeState,
+		arg.AfterState,
 	)
 	return err
 }
@@ -642,7 +1415,8 @@ INSERT INTO sessions (
     ip_address,
     user_agent,
     user_id,
-    impersonated_by
+    impersonated_by,
+    impersonation_reason
 ) VALUES (
     $1,
     $2,
@@ -650,19 +1424,21 @@ INSERT INTO sessions (
     $4,
     $5,
     $6,
-    $7
+    $7,
+    $8
 )
-RETURNING id, expires_at, token, created_at, updated_at, ip_address, user_agent, user_id, impersonated_by, active_organization_id, active_team_id
+RETURNING id, expires_at, token, created_at, updated_at, ip_address, user_agent, user_id, impersonated_by, active_organization_id, active_team_id, impersonation_reason
 `
 
 type CreateImpersonatedSessionParams struct {
-	ID             string
-	ExpiresAt      pgtype.Timestamp
-	Token          string
-	IpAddress      pgtype.Text
-	UserAgent      pgtype.Text
-	UserID         string
-	ImpersonatedBy pgtype.Text
+	ID                  string
+	ExpiresAt           pgtype.Timestamp
+	Token               string
+	IpAddress           pgtype.Text
+	UserAgent           pgtype.Text
+	UserID              string
+	ImpersonatedBy      pgtype.Text
+	ImpersonationReason pgtype.Text
 }
 
 func (q *Queries) CreateImpersonatedSession(ctx context.Context, arg CreateImpersonatedSessionParams) (Session, error) {
@@ -674,6 +1450,7 @@ func (q *Queries) CreateImpersonatedSession(ctx context.Context, arg CreateImper
 		arg.UserAgent,
 		arg.UserID,
 		arg.ImpersonatedBy,
+		arg.ImpersonationReason,
 	)
 	var i Session
 	err := row.Scan(
@@ -688,6 +1465,7 @@ func (q *Queries) CreateImpersonatedSession(ctx context.Context, arg CreateImper
 		&i.ImpersonatedBy,
 		&i.ActiveOrganizationID,
 		&i.ActiveTeamID,
+		&i.ImpersonationReason,
 	)
 	return i, err
 }
@@ -708,7 +1486,7 @@ INSERT INTO sessions (
     $5,
     $6
 )
-RETURNING id, expires_at, token, created_at, updated_at, ip_address, user_agent, user_id, impersonated_by, active_organization_id, active_team_id
+RETURNING id, expires_at, token, created_at, updated_at, ip_address, user_agent, user_id, impersonated_by, active_organization_id, active_team_id, impersonation_reason
 `
 
 type CreateSessionParams struct {
@@ -742,6 +1520,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.ImpersonatedBy,
 		&i.ActiveOrganizationID,
 		&i.ActiveTeamID,
+		&i.ImpersonationReason,
 	)
 	return i, err
 }
@@ -787,7 +1566,7 @@ INSERT INTO users (
     $2,
     $3
 )
-RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires
+RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires, deleted_at
 `
 
 type CreateUserParams struct {
@@ -811,6 +1590,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Banned,
 		&i.BanReason,
 		&i.BanExpires,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -916,6 +1696,7 @@ SELECT
 FROM verifications
 JOIN users ON users.id = verifications.identifier
 WHERE verifications.value = $1
+  AND users.deleted_at IS NULL
   AND verifications.expires_at > (now() AT TIME ZONE 'UTC')
   AND users.email_verified = FALSE
 LIMIT 1
@@ -934,6 +1715,47 @@ func (q *Queries) GetActiveEmailVerification(ctx context.Context, value string) 
 	return i, err
 }
 
+const getActiveOrganizationInvitation = `-- name: GetActiveOrganizationInvitation :one
+SELECT
+    invitations.id,
+    invitations.organization_id,
+    invitations.role,
+    organizations.name AS organization_name
+FROM invitations
+JOIN organizations ON organizations.id = invitations.organization_id
+WHERE invitations.token = $1::text
+  AND lower(invitations.email) = lower($2::text)
+  AND invitations.status = 'pending'
+  AND invitations.expires_at > (now() AT TIME ZONE 'UTC')
+  AND organizations.deleted_at IS NULL
+LIMIT 1
+FOR UPDATE
+`
+
+type GetActiveOrganizationInvitationParams struct {
+	Token string
+	Email string
+}
+
+type GetActiveOrganizationInvitationRow struct {
+	ID               string
+	OrganizationID   string
+	Role             pgtype.Text
+	OrganizationName string
+}
+
+func (q *Queries) GetActiveOrganizationInvitation(ctx context.Context, arg GetActiveOrganizationInvitationParams) (GetActiveOrganizationInvitationRow, error) {
+	row := q.db.QueryRow(ctx, getActiveOrganizationInvitation, arg.Token, arg.Email)
+	var i GetActiveOrganizationInvitationRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Role,
+		&i.OrganizationName,
+	)
+	return i, err
+}
+
 const getActivePasswordReset = `-- name: GetActivePasswordReset :one
 SELECT
     verifications.id,
@@ -945,6 +1767,7 @@ JOIN accounts
     ON accounts.user_id = users.id
    AND accounts.provider_id = 'credential'
 WHERE verifications.value = $1
+  AND users.deleted_at IS NULL
   AND verifications.expires_at > (now() AT TIME ZONE 'UTC')
   AND NOT (
       coalesce(users.banned, FALSE)
@@ -999,6 +1822,7 @@ FROM users
 JOIN accounts ON accounts.user_id = users.id
 LEFT JOIN two_factors ON two_factors.user_id = users.id
 WHERE lower(users.email) = lower($1)
+  AND users.deleted_at IS NULL
   AND accounts.provider_id = 'credential'
 LIMIT 1
 `
@@ -1046,6 +1870,7 @@ JOIN accounts
     ON accounts.user_id = users.id
    AND accounts.provider_id = 'credential'
 WHERE lower(users.email) = lower($1)
+  AND users.deleted_at IS NULL
   AND NOT (
       coalesce(users.banned, FALSE)
       AND (users.ban_expires IS NULL OR users.ban_expires > (now() AT TIME ZONE 'UTC'))
@@ -1092,6 +1917,7 @@ SELECT
     sessions.user_agent,
     sessions.user_id,
     sessions.impersonated_by,
+    sessions.impersonation_reason,
     sessions.active_organization_id,
     sessions.active_team_id,
     users.name AS user_name,
@@ -1102,6 +1928,7 @@ SELECT
 FROM sessions
 JOIN users ON users.id = sessions.user_id
 WHERE sessions.token = $1
+  AND users.deleted_at IS NULL
   AND sessions.expires_at > (now() AT TIME ZONE 'UTC')
   AND NOT (
       coalesce(users.banned, FALSE)
@@ -1119,6 +1946,7 @@ type GetSessionUserRow struct {
 	UserAgent            pgtype.Text
 	UserID               string
 	ImpersonatedBy       pgtype.Text
+	ImpersonationReason  pgtype.Text
 	ActiveOrganizationID pgtype.Text
 	ActiveTeamID         pgtype.Text
 	UserName             string
@@ -1140,6 +1968,7 @@ func (q *Queries) GetSessionUser(ctx context.Context, token string) (GetSessionU
 		&i.UserAgent,
 		&i.UserID,
 		&i.ImpersonatedBy,
+		&i.ImpersonationReason,
 		&i.ActiveOrganizationID,
 		&i.ActiveTeamID,
 		&i.UserName,
@@ -1189,6 +2018,7 @@ JOIN two_factors
    AND two_factors.enabled = TRUE
 JOIN users ON users.id = two_factor_challenges.user_id
 WHERE two_factor_challenges.token = $1
+  AND users.deleted_at IS NULL
   AND two_factor_challenges.expires_at > (now() AT TIME ZONE 'UTC')
   AND NOT (
       coalesce(users.banned, FALSE)
@@ -1424,7 +2254,8 @@ SET
     image = $3,
     updated_at = (now() AT TIME ZONE 'UTC')
 WHERE id = $1
-RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires
+  AND deleted_at IS NULL
+RETURNING id, name, email, email_verified, image, created_at, updated_at, role, banned, ban_reason, ban_expires, deleted_at
 `
 
 type UpdateUserProfileParams struct {
@@ -1448,6 +2279,7 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		&i.Banned,
 		&i.BanReason,
 		&i.BanExpires,
+		&i.DeletedAt,
 	)
 	return i, err
 }

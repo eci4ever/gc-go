@@ -32,6 +32,11 @@ type adminBanRequest struct {
 	ExpiresAt string `json:"expiresAt"`
 }
 
+type adminImpersonationRequest struct {
+	Reason          string `json:"reason"`
+	DurationMinutes int    `json:"durationMinutes"`
+}
+
 type adminOrganizationRequest struct {
 	Name     string `json:"name"`
 	Slug     string `json:"slug"`
@@ -50,22 +55,24 @@ type adminUserResponse struct {
 	Banned            bool       `json:"banned"`
 	BanReason         *string    `json:"banReason"`
 	BanExpires        *time.Time `json:"banExpires"`
+	DeletedAt         *time.Time `json:"deletedAt"`
 	CreatedAt         time.Time  `json:"createdAt"`
 	ActiveSessions    int32      `json:"activeSessions"`
 	OrganizationCount int32      `json:"organizationCount"`
 }
 
 type adminOrganizationResponse struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Slug        string    `json:"slug"`
-	Logo        *string   `json:"logo"`
-	Metadata    *string   `json:"metadata"`
-	CreatedAt   time.Time `json:"createdAt"`
-	OwnerID     *string   `json:"ownerId"`
-	OwnerName   *string   `json:"ownerName"`
-	OwnerEmail  *string   `json:"ownerEmail"`
-	MemberCount int32     `json:"memberCount"`
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Slug        string     `json:"slug"`
+	Logo        *string    `json:"logo"`
+	Metadata    *string    `json:"metadata"`
+	DeletedAt   *time.Time `json:"deletedAt"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	OwnerID     *string    `json:"ownerId"`
+	OwnerName   *string    `json:"ownerName"`
+	OwnerEmail  *string    `json:"ownerEmail"`
+	MemberCount int32      `json:"memberCount"`
 }
 
 func (h *Handler) RegisterAdmin(router fiber.Router) {
@@ -73,6 +80,8 @@ func (h *Handler) RegisterAdmin(router fiber.Router) {
 	router.Post("/users", h.adminCreateUser)
 	router.Put("/users/:id", h.adminUpdateUser)
 	router.Delete("/users/:id", h.adminDeleteUser)
+	router.Post("/users/:id/restore", h.adminRestoreUser)
+	router.Post("/users/bulk", h.adminBulkUsers)
 	router.Post("/users/:id/ban", h.adminSetUserBan)
 	router.Post("/users/:id/impersonate", h.adminImpersonateUser)
 
@@ -80,13 +89,31 @@ func (h *Handler) RegisterAdmin(router fiber.Router) {
 	router.Post("/organizations", h.adminCreateOrganization)
 	router.Put("/organizations/:id", h.adminUpdateOrganization)
 	router.Delete("/organizations/:id", h.adminDeleteOrganization)
+	router.Post("/organizations/:id/restore", h.adminRestoreOrganization)
+	router.Get("/organizations/:id/members", h.adminListOrganizationMembers)
+	router.Post("/organizations/:id/members", h.adminAddOrganizationMember)
+	router.Put("/organizations/:id/members/:userId", h.adminUpdateOrganizationMember)
+	router.Delete("/organizations/:id/members/:userId", h.adminDeleteOrganizationMember)
+	router.Post("/organizations/:id/invitations", h.adminInviteOrganizationMember)
+	router.Delete("/organizations/:id/invitations/:invitationId", h.adminCancelOrganizationInvitation)
+	router.Get("/audit-events", h.adminListAuditEvents)
+	router.Get("/dashboard", h.adminDashboard)
 }
 
 func (h *Handler) adminListUsers(c fiber.Ctx) error {
 	if _, ok := h.requirePlatformAdmin(c); !ok {
 		return nil
 	}
-	users, err := h.queries.AdminListUsers(c.Context())
+	page, pageSize := adminPagination(c)
+	filter := db.AdminListUsersParams{
+		IncludeDeleted: c.Query("includeDeleted") == "true",
+		Search:         strings.TrimSpace(c.Query("search")),
+		Role:           strings.TrimSpace(c.Query("role")),
+		Status:         strings.TrimSpace(c.Query("status")),
+		PageOffset:     int32((page - 1) * pageSize),
+		PageSize:       int32(pageSize),
+	}
+	users, err := h.queries.AdminListUsers(c.Context(), filter)
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to load users")
 	}
@@ -94,7 +121,21 @@ func (h *Handler) adminListUsers(c fiber.Ctx) error {
 	for _, user := range users {
 		response = append(response, adminUserFromRow(user))
 	}
-	return c.JSON(fiber.Map{"users": response})
+	count, err := h.queries.AdminCountUsers(c.Context(), db.AdminCountUsersParams{
+		IncludeDeleted: filter.IncludeDeleted,
+		Search:         filter.Search,
+		Role:           filter.Role,
+		Status:         filter.Status,
+	})
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to load users")
+	}
+	return c.JSON(fiber.Map{
+		"users": response,
+		"pagination": fiber.Map{
+			"page": page, "pageSize": pageSize, "total": count,
+		},
+	})
 }
 
 func (h *Handler) adminCreateUser(c fiber.Ctx) error {
@@ -161,7 +202,7 @@ func (h *Handler) adminCreateUser(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to create user")
 	}
 
-	h.recordAuthEvent(c, admin.UserID, "admin_user_created")
+	h.recordAdminAudit(c, admin.UserID, "admin_user_created", "user", user.ID, "", nil, user)
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"user": userFromModel(user)})
 }
 
@@ -184,6 +225,10 @@ func (h *Handler) adminUpdateUser(c fiber.Ctx) error {
 	if err := h.protectLastAdmin(c, targetID, request.Role == "admin"); err != nil {
 		return err
 	}
+	before, err := h.queries.AdminGetUser(c.Context(), targetID)
+	if err != nil {
+		return jsonError(c, fiber.StatusNotFound, "User not found")
+	}
 
 	user, err := h.queries.AdminUpdateUser(c.Context(), db.AdminUpdateUserParams{
 		ID:            targetID,
@@ -202,7 +247,7 @@ func (h *Handler) adminUpdateUser(c fiber.Ctx) error {
 		}
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to update user")
 	}
-	h.recordAuthEvent(c, admin.UserID, "admin_user_updated")
+	h.recordAdminAudit(c, admin.UserID, "admin_user_updated", "user", targetID, "", before, user)
 	return c.JSON(fiber.Map{"user": userFromModel(user)})
 }
 
@@ -231,6 +276,10 @@ func (h *Handler) adminSetUserBan(c fiber.Ctx) error {
 		}
 		expiresAt = timestampValue(parsed.UTC())
 	}
+	before, err := h.queries.AdminGetUser(c.Context(), targetID)
+	if err != nil {
+		return jsonError(c, fiber.StatusNotFound, "User not found")
+	}
 
 	transaction, err := h.pool.Begin(c.Context())
 	if err != nil {
@@ -258,7 +307,7 @@ func (h *Handler) adminSetUserBan(c fiber.Ctx) error {
 	if err := transaction.Commit(c.Context()); err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to update user ban")
 	}
-	h.recordAuthEvent(c, admin.UserID, "admin_user_ban_updated")
+	h.recordAdminAudit(c, admin.UserID, "admin_user_ban_updated", "user", targetID, request.Reason, before, user)
 	return c.JSON(fiber.Map{"user": userFromModel(user)})
 }
 
@@ -288,15 +337,43 @@ func (h *Handler) adminDeleteUser(c fiber.Ctx) error {
 			"Transfer organization ownership before deleting this user",
 		)
 	}
-	affected, err := h.queries.AdminDeleteUser(c.Context(), targetID)
+	before, err := h.queries.AdminGetUser(c.Context(), targetID)
 	if err != nil {
-		return jsonError(c, fiber.StatusInternalServerError, "Unable to delete user")
-	}
-	if affected == 0 {
 		return jsonError(c, fiber.StatusNotFound, "User not found")
 	}
-	h.recordAuthEvent(c, admin.UserID, "admin_user_deleted")
+	user, err := h.queries.AdminSoftDeleteUser(c.Context(), targetID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return jsonError(c, fiber.StatusNotFound, "User not found")
+		}
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to delete user")
+	}
+	if err := h.queries.DeleteAllUserSessions(c.Context(), targetID); err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to delete user")
+	}
+	h.recordAdminAudit(c, admin.UserID, "admin_user_deleted", "user", targetID, "", before, user)
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *Handler) adminRestoreUser(c fiber.Ctx) error {
+	admin, ok := h.requirePlatformAdmin(c)
+	if !ok {
+		return nil
+	}
+	targetID := c.Params("id")
+	before, _ := h.queries.AdminGetUser(c.Context(), targetID)
+	user, err := h.queries.AdminRestoreUser(c.Context(), targetID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return jsonError(c, fiber.StatusNotFound, "Deleted user not found")
+		}
+		if isUniqueViolation(err) {
+			return jsonError(c, fiber.StatusConflict, "Email is already used by an active account")
+		}
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to restore user")
+	}
+	h.recordAdminAudit(c, admin.UserID, "admin_user_restored", "user", targetID, "", before, user)
+	return c.JSON(fiber.Map{"user": userFromModel(user)})
 }
 
 func (h *Handler) adminImpersonateUser(c fiber.Ctx) error {
@@ -308,6 +385,17 @@ func (h *Handler) adminImpersonateUser(c fiber.Ctx) error {
 	if targetID == admin.UserID {
 		return jsonError(c, fiber.StatusBadRequest, "You are already using this account")
 	}
+	var request adminImpersonationRequest
+	if err := c.Bind().Body(&request); err != nil {
+		return jsonError(c, fiber.StatusBadRequest, "Invalid request body")
+	}
+	request.Reason = strings.TrimSpace(request.Reason)
+	if request.Reason == "" {
+		return jsonError(c, fiber.StatusBadRequest, "An impersonation reason is required")
+	}
+	if request.DurationMinutes < 1 || request.DurationMinutes > 60 {
+		return jsonError(c, fiber.StatusBadRequest, "Impersonation duration must be between 1 and 60 minutes")
+	}
 	target, err := h.queries.AdminGetUser(c.Context(), targetID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -318,6 +406,9 @@ func (h *Handler) adminImpersonateUser(c fiber.Ctx) error {
 	if activeBan(target.Banned, target.BanExpires) {
 		return jsonError(c, fiber.StatusBadRequest, "Banned users cannot be impersonated")
 	}
+	if target.DeletedAt.Valid {
+		return jsonError(c, fiber.StatusBadRequest, "Deleted users cannot be impersonated")
+	}
 
 	rawToken, tokenHash, err := newSessionToken()
 	if err != nil {
@@ -327,23 +418,28 @@ func (h *Handler) adminImpersonateUser(c fiber.Ctx) error {
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to impersonate user")
 	}
-	expiresAt := time.Now().UTC().Add(sessionLifetime)
+	expiresAt := time.Now().UTC().Add(
+		time.Duration(request.DurationMinutes) * time.Minute,
+	)
 	session, err := h.queries.CreateImpersonatedSession(
 		c.Context(),
 		db.CreateImpersonatedSessionParams{
-			ID:             sessionID,
-			ExpiresAt:      timestampValue(expiresAt),
-			Token:          tokenHash,
-			IpAddress:      textValue(c.IP()),
-			UserAgent:      textValue(c.Get("User-Agent")),
-			UserID:         target.ID,
-			ImpersonatedBy: textValue(admin.UserID),
+			ID:                  sessionID,
+			ExpiresAt:           timestampValue(expiresAt),
+			Token:               tokenHash,
+			IpAddress:           textValue(c.IP()),
+			UserAgent:           textValue(c.Get("User-Agent")),
+			UserID:              target.ID,
+			ImpersonatedBy:      textValue(admin.UserID),
+			ImpersonationReason: textValue(request.Reason),
 		},
 	)
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to impersonate user")
 	}
-	h.recordAuthEvent(c, admin.UserID, "admin_impersonation_started")
+	h.recordAdminAudit(c, admin.UserID, "admin_impersonation_started", "user", target.ID, request.Reason, nil, fiber.Map{
+		"expiresAt": expiresAt,
+	})
 	h.setSessionCookie(c, rawToken, expiresAt)
 	return c.JSON(fiber.Map{
 		"session": sessionFromModel(session),
@@ -403,7 +499,16 @@ func (h *Handler) stopImpersonation(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to stop impersonation")
 	}
 	h.setSessionCookie(c, rawToken, expiresAt)
-	h.recordAuthEvent(c, admin.ID, "admin_impersonation_stopped")
+	h.recordAdminAudit(
+		c,
+		admin.ID,
+		"admin_impersonation_stopped",
+		"user",
+		current.UserID,
+		current.ImpersonationReason.String,
+		fiber.Map{"impersonatedSessionId": current.SessionID},
+		nil,
+	)
 	return c.JSON(fiber.Map{
 		"session": sessionFromModel(session),
 		"user":    userFromModel(admin),
@@ -414,7 +519,14 @@ func (h *Handler) adminListOrganizations(c fiber.Ctx) error {
 	if _, ok := h.requirePlatformAdmin(c); !ok {
 		return nil
 	}
-	organizations, err := h.queries.AdminListOrganizations(c.Context())
+	page, pageSize := adminPagination(c)
+	filter := db.AdminListOrganizationsParams{
+		IncludeDeleted: c.Query("includeDeleted") == "true",
+		Search:         strings.TrimSpace(c.Query("search")),
+		PageOffset:     int32((page - 1) * pageSize),
+		PageSize:       int32(pageSize),
+	}
+	organizations, err := h.queries.AdminListOrganizations(c.Context(), filter)
 	if err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to load organizations")
 	}
@@ -422,7 +534,22 @@ func (h *Handler) adminListOrganizations(c fiber.Ctx) error {
 	for _, organization := range organizations {
 		response = append(response, adminOrganizationFromRow(organization))
 	}
-	return c.JSON(fiber.Map{"organizations": response})
+	count, err := h.queries.AdminCountOrganizations(
+		c.Context(),
+		db.AdminCountOrganizationsParams{
+			IncludeDeleted: filter.IncludeDeleted,
+			Search:         filter.Search,
+		},
+	)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to load organizations")
+	}
+	return c.JSON(fiber.Map{
+		"organizations": response,
+		"pagination": fiber.Map{
+			"page": page, "pageSize": pageSize, "total": count,
+		},
+	})
 }
 
 func (h *Handler) adminCreateOrganization(c fiber.Ctx) error {
@@ -438,7 +565,8 @@ func (h *Handler) adminCreateOrganization(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusBadRequest, message)
 	}
 	owner, err := h.queries.AdminGetUser(c.Context(), request.OwnerID)
-	if err != nil || activeBan(owner.Banned, owner.BanExpires) {
+	if err != nil || owner.DeletedAt.Valid ||
+		activeBan(owner.Banned, owner.BanExpires) {
 		return jsonError(c, fiber.StatusBadRequest, "Select an active organization owner")
 	}
 	organizationID, err := randomValue(18)
@@ -485,7 +613,7 @@ func (h *Handler) adminCreateOrganization(c fiber.Ctx) error {
 	if err := transaction.Commit(c.Context()); err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to create organization")
 	}
-	h.recordAuthEvent(c, admin.UserID, "admin_organization_created")
+	h.recordAdminAudit(c, admin.UserID, "admin_organization_created", "organization", organization.ID, "", nil, organization)
 	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"organization": organization})
 }
 
@@ -503,8 +631,13 @@ func (h *Handler) adminUpdateOrganization(c fiber.Ctx) error {
 		return jsonError(c, fiber.StatusBadRequest, message)
 	}
 	owner, err := h.queries.AdminGetUser(c.Context(), request.OwnerID)
-	if err != nil || activeBan(owner.Banned, owner.BanExpires) {
+	if err != nil || owner.DeletedAt.Valid ||
+		activeBan(owner.Banned, owner.BanExpires) {
 		return jsonError(c, fiber.StatusBadRequest, "Select an active organization owner")
+	}
+	before, err := h.queries.AdminGetOrganization(c.Context(), organizationID)
+	if err != nil {
+		return jsonError(c, fiber.StatusNotFound, "Organization not found")
 	}
 	memberID, err := randomValue(18)
 	if err != nil {
@@ -552,7 +685,7 @@ func (h *Handler) adminUpdateOrganization(c fiber.Ctx) error {
 	if err := transaction.Commit(c.Context()); err != nil {
 		return jsonError(c, fiber.StatusInternalServerError, "Unable to update organization")
 	}
-	h.recordAuthEvent(c, admin.UserID, "admin_organization_updated")
+	h.recordAdminAudit(c, admin.UserID, "admin_organization_updated", "organization", organizationID, "", before, organization)
 	return c.JSON(fiber.Map{"organization": organization})
 }
 
@@ -561,15 +694,47 @@ func (h *Handler) adminDeleteOrganization(c fiber.Ctx) error {
 	if !ok {
 		return nil
 	}
-	affected, err := h.queries.AdminDeleteOrganization(c.Context(), c.Params("id"))
+	organizationID := c.Params("id")
+	before, err := h.queries.AdminGetOrganization(c.Context(), organizationID)
 	if err != nil {
-		return jsonError(c, fiber.StatusInternalServerError, "Unable to delete organization")
-	}
-	if affected == 0 {
 		return jsonError(c, fiber.StatusNotFound, "Organization not found")
 	}
-	h.recordAuthEvent(c, admin.UserID, "admin_organization_deleted")
+	organization, err := h.queries.AdminSoftDeleteOrganization(
+		c.Context(),
+		organizationID,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return jsonError(c, fiber.StatusNotFound, "Organization not found")
+		}
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to delete organization")
+	}
+	h.recordAdminAudit(c, admin.UserID, "admin_organization_deleted", "organization", organizationID, "", before, organization)
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *Handler) adminRestoreOrganization(c fiber.Ctx) error {
+	admin, ok := h.requirePlatformAdmin(c)
+	if !ok {
+		return nil
+	}
+	organizationID := c.Params("id")
+	before, _ := h.queries.AdminGetOrganization(c.Context(), organizationID)
+	organization, err := h.queries.AdminRestoreOrganization(
+		c.Context(),
+		organizationID,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return jsonError(c, fiber.StatusNotFound, "Deleted organization not found")
+		}
+		if isUniqueViolation(err) {
+			return jsonError(c, fiber.StatusConflict, "Slug is already used by an active organization")
+		}
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to restore organization")
+	}
+	h.recordAdminAudit(c, admin.UserID, "admin_organization_restored", "organization", organizationID, "", before, organization)
+	return c.JSON(fiber.Map{"organization": organization})
 }
 
 func (h *Handler) requirePlatformAdmin(c fiber.Ctx) (db.GetSessionUserRow, bool) {
@@ -674,6 +839,7 @@ func adminUserFromRow(user db.AdminListUsersRow) adminUserResponse {
 		Banned:            user.Banned,
 		BanReason:         stringPointer(user.BanReason),
 		BanExpires:        timePointer(user.BanExpires),
+		DeletedAt:         timePointer(user.DeletedAt),
 		CreatedAt:         user.CreatedAt.Time,
 		ActiveSessions:    user.ActiveSessions,
 		OrganizationCount: user.OrganizationCount,
@@ -689,6 +855,7 @@ func adminOrganizationFromRow(
 		Slug:        organization.Slug,
 		Logo:        stringPointer(organization.Logo),
 		Metadata:    stringPointer(organization.Metadata),
+		DeletedAt:   timePointer(organization.DeletedAt),
 		CreatedAt:   organization.CreatedAt.Time,
 		OwnerID:     stringPointer(organization.OwnerID),
 		OwnerName:   stringPointer(organization.OwnerName),

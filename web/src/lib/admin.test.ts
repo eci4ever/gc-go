@@ -21,11 +21,11 @@ describe('platform admin API client', () => {
       ),
     )
 
-    await expect(adminUsersQueryOptions.queryFn!({} as never)).resolves.toEqual({
+    await expect(adminUsersQueryOptions().queryFn!({} as never)).resolves.toEqual({
       users: [{ id: 'user-1' }],
     })
     await expect(
-      adminOrganizationsQueryOptions.queryFn!({} as never),
+      adminOrganizationsQueryOptions().queryFn!({} as never),
     ).resolves.toEqual({
       organizations: [{ id: 'org-1' }],
     })
@@ -86,7 +86,12 @@ describe('platform admin API client', () => {
       ),
     )
 
-    await expect(impersonateAdminUser('user-2')).resolves.toMatchObject({
+    await expect(
+      impersonateAdminUser('user-2', {
+        reason: 'Support',
+        durationMinutes: 30,
+      }),
+    ).resolves.toMatchObject({
       session: { impersonatedBy: 'admin-1' },
       user: { id: 'user-2' },
     })

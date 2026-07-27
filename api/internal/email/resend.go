@@ -83,3 +83,33 @@ func (s *ResendSender) SendPasswordReset(
 	_, err := s.client.Emails.SendWithContext(ctx, request)
 	return err
 }
+
+func (s *ResendSender) SendOrganizationInvitation(
+	ctx context.Context,
+	to string,
+	organizationName string,
+	invitationURL string,
+) error {
+	request := &resend.SendEmailRequest{
+		From:    s.from,
+		To:      []string{to},
+		Subject: fmt.Sprintf("Join %s on GC Go", organizationName),
+		Text: fmt.Sprintf(
+			"You have been invited to join %s.\n\nAccept the invitation:\n%s\n\nThis link expires in 7 days.",
+			organizationName,
+			invitationURL,
+		),
+		Html: fmt.Sprintf(
+			`<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#18181b">
+				<h1 style="font-size:22px">Organization invitation</h1>
+				<p>You have been invited to join <strong>%s</strong>.</p>
+				<p style="margin:28px 0"><a href="%s" style="background:#18181b;color:#fff;padding:12px 18px;text-decoration:none">Accept invitation</a></p>
+				<p style="font-size:13px;color:#71717a">This link expires in 7 days.</p>
+			</div>`,
+			html.EscapeString(organizationName),
+			html.EscapeString(invitationURL),
+		),
+	}
+	_, err := s.client.Emails.SendWithContext(ctx, request)
+	return err
+}
