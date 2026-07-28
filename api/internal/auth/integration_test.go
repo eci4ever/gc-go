@@ -540,6 +540,53 @@ func TestAuthFlowIntegration(t *testing.T) {
 		)
 	}
 
+	deleteNotificationResponse := authRequest(
+		t,
+		app,
+		http.MethodDelete,
+		"/api/auth/notifications/"+notificationsBody.Notifications[0].ID,
+		nil,
+		cookies[0],
+	)
+	if deleteNotificationResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf(
+			"delete notification status = %d, want %d",
+			deleteNotificationResponse.StatusCode,
+			http.StatusNoContent,
+		)
+	}
+	deleteNotificationResponse.Body.Close()
+
+	clearReadNotificationsResponse := authRequest(
+		t,
+		app,
+		http.MethodDelete,
+		"/api/auth/notifications/read",
+		nil,
+		cookies[0],
+	)
+	if clearReadNotificationsResponse.StatusCode != http.StatusOK {
+		t.Fatalf(
+			"clear read notifications status = %d, want %d",
+			clearReadNotificationsResponse.StatusCode,
+			http.StatusOK,
+		)
+	}
+	var clearReadNotificationsBody struct {
+		Deleted int64 `json:"deleted"`
+	}
+	decodeResponse(
+		t,
+		clearReadNotificationsResponse,
+		&clearReadNotificationsBody,
+	)
+	if clearReadNotificationsBody.Deleted != 2 {
+		t.Fatalf(
+			"cleared notifications = %d, want 2",
+			clearReadNotificationsBody.Deleted,
+		)
+	}
+
 	logoutResponse := authRequest(
 		t,
 		app,

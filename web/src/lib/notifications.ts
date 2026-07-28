@@ -42,6 +42,20 @@ export function markAllNotificationsRead() {
   )
 }
 
+export function deleteNotification(id: string) {
+  return notificationRequest<void>(
+    `/api/auth/notifications/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  )
+}
+
+export function clearReadNotifications() {
+  return notificationRequest<{ deleted: number }>(
+    '/api/auth/notifications/read',
+    { method: 'DELETE' },
+  )
+}
+
 async function notificationRequest<T>(
   url: string,
   init?: RequestInit,

@@ -2343,6 +2343,20 @@ func (q *Queries) DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUs
 	return err
 }
 
+const deleteReadUserNotifications = `-- name: DeleteReadUserNotifications :execrows
+DELETE FROM notifications
+WHERE user_id = $1
+  AND read_at IS NOT NULL
+`
+
+func (q *Queries) DeleteReadUserNotifications(ctx context.Context, userID string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteReadUserNotifications, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteSession = `-- name: DeleteSession :exec
 DELETE FROM sessions
 WHERE token = $1
@@ -2398,6 +2412,25 @@ WHERE identifier = $1
 func (q *Queries) DeleteUserEmailVerifications(ctx context.Context, identifier string) error {
 	_, err := q.db.Exec(ctx, deleteUserEmailVerifications, identifier)
 	return err
+}
+
+const deleteUserNotification = `-- name: DeleteUserNotification :execrows
+DELETE FROM notifications
+WHERE id = $1
+  AND user_id = $2
+`
+
+type DeleteUserNotificationParams struct {
+	ID     string `json:"id"`
+	UserID string `json:"userId"`
+}
+
+func (q *Queries) DeleteUserNotification(ctx context.Context, arg DeleteUserNotificationParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUserNotification, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const enableTwoFactor = `-- name: EnableTwoFactor :exec

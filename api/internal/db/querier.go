@@ -81,11 +81,13 @@ type Querier interface {
 	DeleteOrganizationTeam(ctx context.Context, arg DeleteOrganizationTeamParams) (Team, error)
 	DeleteOrganizationTeamMember(ctx context.Context, arg DeleteOrganizationTeamMemberParams) (int64, error)
 	DeleteOtherUserSessions(ctx context.Context, arg DeleteOtherUserSessionsParams) error
+	DeleteReadUserNotifications(ctx context.Context, userID string) (int64, error)
 	DeleteSession(ctx context.Context, token string) error
 	DeleteTeamRole(ctx context.Context, arg DeleteTeamRoleParams) (int64, error)
 	DeleteTwoFactor(ctx context.Context, userID string) error
 	DeleteTwoFactorChallenge(ctx context.Context, id string) error
 	DeleteUserEmailVerifications(ctx context.Context, identifier string) error
+	DeleteUserNotification(ctx context.Context, arg DeleteUserNotificationParams) (int64, error)
 	EnableTwoFactor(ctx context.Context, arg EnableTwoFactorParams) error
 	GetActiveEmailVerification(ctx context.Context, value string) (GetActiveEmailVerificationRow, error)
 	GetActivePasswordReset(ctx context.Context, value string) (GetActivePasswordResetRow, error)

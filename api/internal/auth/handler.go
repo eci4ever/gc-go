@@ -146,6 +146,8 @@ func (h *Handler) Register(router fiber.Router) {
 	router.Get("/notifications", h.listNotifications)
 	router.Post("/notifications/read-all", h.markAllNotificationsRead)
 	router.Post("/notifications/:id/read", h.markNotificationRead)
+	router.Delete("/notifications/read", h.deleteReadNotifications)
+	router.Delete("/notifications/:id", h.deleteNotification)
 }
 
 func (h *Handler) signup(c fiber.Ctx) error {

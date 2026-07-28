@@ -92,6 +92,50 @@ func (h *Handler) markAllNotificationsRead(c fiber.Ctx) error {
 	return c.JSON(fiber.Map{"updated": updated})
 }
 
+func (h *Handler) deleteNotification(c fiber.Ctx) error {
+	current, ok, err := h.currentSession(c)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to delete notification")
+	}
+	if !ok {
+		return jsonError(c, fiber.StatusUnauthorized, "Authentication required")
+	}
+
+	deleted, err := h.queries.DeleteUserNotification(
+		c.Context(),
+		db.DeleteUserNotificationParams{
+			ID:     c.Params("id"),
+			UserID: current.UserID,
+		},
+	)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to delete notification")
+	}
+	if deleted == 0 {
+		return jsonError(c, fiber.StatusNotFound, "Notification not found")
+	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+func (h *Handler) deleteReadNotifications(c fiber.Ctx) error {
+	current, ok, err := h.currentSession(c)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to clear notifications")
+	}
+	if !ok {
+		return jsonError(c, fiber.StatusUnauthorized, "Authentication required")
+	}
+
+	deleted, err := h.queries.DeleteReadUserNotifications(
+		c.Context(),
+		current.UserID,
+	)
+	if err != nil {
+		return jsonError(c, fiber.StatusInternalServerError, "Unable to clear notifications")
+	}
+	return c.JSON(fiber.Map{"deleted": deleted})
+}
+
 func (h *Handler) createNotification(
 	ctx context.Context,
 	queries notificationQueries,

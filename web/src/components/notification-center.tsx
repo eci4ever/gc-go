@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BellIcon, CheckCheckIcon } from 'lucide-react'
+import { BellIcon, CheckCheckIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
@@ -16,6 +16,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
+  clearReadNotifications,
+  deleteNotification,
   markAllNotificationsRead,
   markNotificationRead,
   notificationsQueryOptions,
@@ -38,7 +40,29 @@ export function NotificationCenter() {
       queryClient.invalidateQueries({ queryKey: ['notifications'] }),
     onError: (error) => toast.error(error.message),
   })
+  const remove = useMutation({
+    mutationFn: deleteNotification,
+    onSuccess: () => {
+      toast.success('Notification deleted')
+      return queryClient.invalidateQueries({ queryKey: ['notifications'] })
+    },
+    onError: (error) => toast.error(error.message),
+  })
+  const clearRead = useMutation({
+    mutationFn: clearReadNotifications,
+    onSuccess: (result) => {
+      toast.success(
+        result.deleted === 1
+          ? '1 read notification cleared'
+          : `${result.deleted} read notifications cleared`,
+      )
+      return queryClient.invalidateQueries({ queryKey: ['notifications'] })
+    },
+    onError: (error) => toast.error(error.message),
+  })
   const unreadCount = notifications.data?.unreadCount ?? 0
+  const hasReadNotifications =
+    (notifications.data?.notifications.length ?? 0) > unreadCount
 
   function openNotification(notification: Notification) {
     if (!notification.readAt) {
@@ -93,6 +117,15 @@ export function NotificationCenter() {
               {markAllRead.isPending ? 'Marking…' : 'Mark all as read'}
             </DropdownMenuItem>
           ) : null}
+          {hasReadNotifications ? (
+            <DropdownMenuItem
+              disabled={clearRead.isPending}
+              onClick={() => clearRead.mutate()}
+            >
+              <Trash2Icon />
+              {clearRead.isPending ? 'Clearing…' : 'Clear all read'}
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <ScrollArea className="max-h-96">
@@ -109,33 +142,50 @@ export function NotificationCenter() {
               </DropdownMenuItem>
             ) : notifications.data.notifications.length ? (
               notifications.data.notifications.map((notification) => (
-                <DropdownMenuItem
+                <div
                   key={notification.id}
                   className={cn(
-                    'items-start py-3 normal-case tracking-normal',
+                    'flex items-start gap-1 px-1 py-1',
                     !notification.readAt && 'bg-muted',
                   )}
-                  onClick={() => openNotification(notification)}
                 >
-                  <span
-                    aria-hidden="true"
-                    className={cn(
-                      'mt-1.5 size-2 shrink-0 rounded-full bg-muted-foreground/30',
-                      !notification.readAt && 'bg-primary',
-                    )}
-                  />
-                  <span className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span className="truncate font-semibold">
-                      {notification.title}
+                  <Button
+                    variant="ghost"
+                    className="h-auto min-w-0 flex-1 justify-start px-2 py-2 text-left normal-case tracking-normal"
+                    onClick={() => openNotification(notification)}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'mt-1 size-2 shrink-0 rounded-full bg-muted-foreground/30',
+                        !notification.readAt && 'bg-primary',
+                      )}
+                    />
+                    <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                      <span className="max-w-full truncate font-semibold">
+                        {notification.title}
+                      </span>
+                      <span className="line-clamp-2 max-w-full text-muted-foreground">
+                        {notification.body}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatNotificationTime(notification.createdAt)}
+                      </span>
                     </span>
-                    <span className="line-clamp-2 text-muted-foreground">
-                      {notification.body}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {formatNotificationTime(notification.createdAt)}
-                    </span>
-                  </span>
-                </DropdownMenuItem>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Delete ${notification.title}`}
+                    disabled={
+                      remove.isPending &&
+                      remove.variables === notification.id
+                    }
+                    onClick={() => remove.mutate(notification.id)}
+                  >
+                    <Trash2Icon aria-hidden="true" />
+                  </Button>
+                </div>
               ))
             ) : (
               <DropdownMenuItem disabled>No notifications yet</DropdownMenuItem>

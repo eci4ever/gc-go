@@ -45,6 +45,16 @@ SET read_at = (now() AT TIME ZONE 'UTC')
 WHERE user_id = $1
   AND read_at IS NULL;
 
+-- name: DeleteUserNotification :execrows
+DELETE FROM notifications
+WHERE id = $1
+  AND user_id = $2;
+
+-- name: DeleteReadUserNotifications :execrows
+DELETE FROM notifications
+WHERE user_id = $1
+  AND read_at IS NOT NULL;
+
 -- name: CreateUser :one
 INSERT INTO users (
     id,
