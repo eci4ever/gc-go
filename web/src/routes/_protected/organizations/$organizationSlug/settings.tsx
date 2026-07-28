@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate, redirect } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -103,14 +104,10 @@ function OrganizationSettings() {
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-      <div>
-        <h1 className="font-heading text-xl font-semibold tracking-wide uppercase">
-          Organization settings
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Identity and ownership controls for {organization.name}.
-        </p>
-      </div>
+      <PageHeader
+        title="Organization Settings"
+        description={`Identity and ownership controls for ${organization.name}.`}
+      />
       <Card>
         <CardHeader>
           <CardTitle>Organization profile</CardTitle>

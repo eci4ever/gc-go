@@ -24,6 +24,7 @@ import {
 import { toast } from 'sonner'
 
 import { DataTable } from '@/components/data-table'
+import { PageHeader } from '@/components/page-header'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -391,18 +392,16 @@ function AdminUsersPage() {
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 pt-0">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-xl font-semibold">Users</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage access, roles, account status, and user sessions.
-          </p>
-        </div>
-        <Button onClick={() => setEditor('new')}>
-          <PlusIcon />
-          Add user
-        </Button>
-      </div>
+      <PageHeader
+        title="Users"
+        description="Manage access, roles, account status, and user sessions."
+        actions={
+          <Button onClick={() => setEditor('new')}>
+            <PlusIcon data-icon="inline-start" />
+            Add User
+          </Button>
+        }
+      />
 
       {selectedIDs.length ? (
         <div className="flex items-center justify-between border bg-muted/30 px-4 py-3">
@@ -450,6 +449,7 @@ function AdminUsersPage() {
       </div>
 
       <DataTable
+        loading={usersQuery.isPending}
         columns={columns}
         data={usersQuery.data?.users ?? []}
         searchColumn="email"

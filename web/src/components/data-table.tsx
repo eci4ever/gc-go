@@ -31,6 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Skeleton } from '@/components/ui/skeleton'
 import type { Pagination } from '@/lib/admin'
 
 export function DataTable<TData>({
@@ -44,6 +45,7 @@ export function DataTable<TData>({
   pagination,
   onPageChange,
   toolbarActions,
+  loading = false,
 }: {
   columns: ColumnDef<TData>[]
   data: TData[]
@@ -55,6 +57,7 @@ export function DataTable<TData>({
   pagination?: Pagination
   onPageChange?: (page: number) => void
   toolbarActions?: ReactNode
+  loading?: boolean
 }) {
   const [sorting, setSorting] = useState<SortingState>([])
   const table = useReactTable({
@@ -131,7 +134,17 @@ export function DataTable<TData>({
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.length ? (
+            {loading ? (
+              Array.from({ length: 5 }, (_, rowIndex) => (
+                <TableRow key={`loading-${rowIndex}`}>
+                  {columns.map((_, columnIndex) => (
+                    <TableCell key={`loading-${rowIndex}-${columnIndex}`}>
+                      <Skeleton className="h-4 w-full max-w-36" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow key={row.id}>
                   {row.getVisibleCells().map((cell) => (

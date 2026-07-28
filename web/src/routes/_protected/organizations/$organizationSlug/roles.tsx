@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { PlusIcon, ShieldCheckIcon, Trash2Icon } from "lucide-react";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/page-header";
 import type {
   OrganizationCustomRole,
   OrganizationPermission,
@@ -103,20 +104,16 @@ function OrganizationRoles() {
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-xl font-semibold tracking-wide uppercase">
-            Roles & permissions
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Combine platform-defined permissions into roles for your members.
-          </p>
-        </div>
-        <Button onClick={() => setEditing("new")}>
-          <PlusIcon />
-          Create role
-        </Button>
-      </div>
+      <PageHeader
+        title="Roles & Permissions"
+        description="Combine platform-defined permissions into roles for your members."
+        actions={
+          <Button onClick={() => setEditing("new")}>
+            <PlusIcon data-icon="inline-start" />
+            Create Role
+          </Button>
+        }
+      />
 
       <Card>
         <CardHeader>

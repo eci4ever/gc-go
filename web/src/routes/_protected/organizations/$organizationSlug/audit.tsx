@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { ActivityIcon } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -44,14 +45,10 @@ function OrganizationAudit() {
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-      <div>
-        <h1 className="font-heading text-xl font-semibold tracking-wide uppercase">
-          Organization audit
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Security-sensitive changes made within this workspace.
-        </p>
-      </div>
+      <PageHeader
+        title="Organization Audit"
+        description="Security-sensitive changes made within this workspace."
+      />
       <Card>
         <CardHeader>
           <CardTitle>Activity</CardTitle>

@@ -20,6 +20,7 @@ import {
 import { toast } from 'sonner'
 
 import { DataTable } from '@/components/data-table'
+import { PageHeader } from '@/components/page-header'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -273,22 +274,19 @@ function AdminOrganizationsPage() {
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 pt-0">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-xl font-semibold">
-            Organizations
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Manage workspaces, ownership, identity, and membership totals.
-          </p>
-        </div>
-        <Button onClick={() => setEditor('new')}>
-          <PlusIcon />
-          Add organization
-        </Button>
-      </div>
+      <PageHeader
+        title="Organizations"
+        description="Manage workspaces, ownership, identity, and membership totals."
+        actions={
+          <Button onClick={() => setEditor('new')}>
+            <PlusIcon data-icon="inline-start" />
+            Add Organization
+          </Button>
+        }
+      />
 
       <DataTable
+        loading={organizationsQuery.isPending}
         columns={columns}
         data={organizationsQuery.data?.organizations ?? []}
         searchColumn="name"

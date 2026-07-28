@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -110,16 +111,11 @@ function OrganizationMembers() {
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-xl font-semibold tracking-wide uppercase">
-            Members
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            People with access to {organization.name}.
-          </p>
-        </div>
-        {canInvite && (
+      <PageHeader
+        title="Members"
+        description={`People with access to ${organization.name}.`}
+        actions={
+          canInvite ? (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger render={<Button />}>Invite member</DialogTrigger>
             <DialogContent>
@@ -171,8 +167,9 @@ function OrganizationMembers() {
               </FieldGroup>
             </DialogContent>
           </Dialog>
-        )}
-      </div>
+          ) : null
+        }
+      />
       <Card>
         <CardHeader>
           <CardTitle>Organization members</CardTitle>

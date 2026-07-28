@@ -635,6 +635,7 @@ export function TeamDetails() {
             </Button>
           )}
           <DataTable
+            loading={teamMembers.isPending}
             columns={columns(
               assignedRows,
               selectedAssigned,
@@ -654,6 +655,7 @@ export function TeamDetails() {
             <div className="space-y-2">
               <h3 className="text-sm font-medium">Pending invitations</h3>
               <DataTable
+                loading={organizationMembers.isPending}
                 columns={invitationColumns}
                 data={pendingInvitations}
                 searchColumn="search"
@@ -685,6 +687,7 @@ export function TeamDetails() {
               </Button>
             )}
             <DataTable
+              loading={organizationMembers.isPending}
               columns={columns(
                 availableRows,
                 selectedAvailable,

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
 
+import { PageHeader } from '@/components/page-header'
 import {
   Card,
   CardContent,
@@ -62,14 +63,10 @@ function PlatformAdminOverview() {
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 pt-0">
-      <div>
-        <h1 className="font-heading text-xl font-semibold">
-          Platform overview
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Account, organization, and access activity across the platform.
-        </p>
-      </div>
+      <PageHeader
+        title="Platform Overview"
+        description="Account, organization, and access activity across the platform."
+      />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
           <Card key={card.label}>

@@ -5,6 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { EyeIcon } from 'lucide-react'
 
 import { DataTable } from '@/components/data-table'
+import { PageHeader } from '@/components/page-header'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -106,13 +107,12 @@ function AuditLogPage() {
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 pt-0">
-      <div>
-        <h1 className="font-heading text-xl font-semibold">Audit log</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Trace administrative actions, targets, reasons, and state changes.
-        </p>
-      </div>
+      <PageHeader
+        title="Audit Log"
+        description="Trace administrative actions, targets, reasons, and state changes."
+      />
       <DataTable
+        loading={audit.isPending}
         columns={columns}
         data={audit.data?.events ?? []}
         searchColumn="eventType"
