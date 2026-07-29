@@ -2,51 +2,6 @@
 
 Go Fiber v3 API and React web app in one repository.
 
-## Docker development
-
-The complete application runs with Docker Compose:
-
-- Caddy serves the Vite build and proxies `/api/*`.
-- Go Fiber runs as a private API service.
-- PostgreSQL 18 stores data in a named volume.
-- A one-shot migration container runs before the API starts.
-
-Copy the Docker environment template and start the stack:
-
-```sh
-cp .env.example .env
-docker compose up --build -d
-docker compose ps
-```
-
-With OrbStack, open:
-
-```text
-http://gc-go-web.orb.local
-```
-
-The published fallback address is `http://localhost`. PostgreSQL is bound to
-`127.0.0.1:5432` for local development and is not exposed externally. Open a
-SQL shell with:
-
-```sh
-docker compose exec postgres \
-  sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
-```
-
-Useful commands:
-
-```sh
-docker compose logs -f api
-docker compose logs -f web
-docker compose run --rm migrate
-docker compose down
-docker compose down -v # also deletes the PostgreSQL data volume
-```
-
-The root `.env` is used only at runtime and must not be committed. Docker build
-contexts exclude all real environment files.
-
 ## Development
 
 Run the development environment with one command:
@@ -64,6 +19,27 @@ All development and Docker variables live in the root `.env`. The local
 database connection uses the single `DATABASE_URL` variable; Compose keeps the
 matching local PostgreSQL bootstrap values internally. Copy `.env.example`
 when setting up a new checkout.
+
+PostgreSQL is bound to `127.0.0.1:5432` and persists in the
+`postgres_data` volume. Useful database commands:
+
+```sh
+docker compose ps
+docker compose exec postgres \
+  sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+docker compose down
+docker compose down -v # also deletes the local PostgreSQL data volume
+```
+
+## Production deployment
+
+Pushes to `main` run `.github/workflows/deploy.yml`. GitHub Actions tests and
+builds the application, publishes the Go API image, uploads the React static
+build, runs migrations, and deploys to `https://vms.nimfi.dev`.
+
+Native Caddy on the VM serves the React build and proxies `/api/*` to the Go
+API on `127.0.0.1:3000`. Production shares one PostgreSQL container with
+GC-Hono while using the separate `gcgo` database.
 
 ## Database
 
