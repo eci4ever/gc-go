@@ -1,0 +1,5 @@
+CREATE USER gcgo WITH PASSWORD 'gcgo';
+CREATE DATABASE gcgo OWNER gcgo;
+
+CREATE USER gchono WITH PASSWORD 'gchono';
+CREATE DATABASE gchono OWNER gchono;

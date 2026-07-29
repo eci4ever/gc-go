@@ -40,6 +40,14 @@ jobs:
       - run: npm run build
       - run: go test ./...
         working-directory: api
+      - name: Package web build
+        run: tar -C web/dist -czf gc-go-web.tar.gz .
+      - uses: actions/upload-artifact@v6
+        with:
+          name: gc-go-web
+          path: gc-go-web.tar.gz
+          if-no-files-found: error
+          retention-days: 7
 
   publish:
     name: Publish images
@@ -68,15 +76,6 @@ jobs:
           tags: ghcr.io/eci4ever/gc-go-api:${{ steps.commit.outputs.sha }}
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
-      - uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: web/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: ghcr.io/eci4ever/gc-go-web:${{ steps.commit.outputs.sha }}
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,mode=max,scope=web
 
   deploy:
     name: Deploy to VM
@@ -85,6 +84,9 @@ jobs:
     environment: production
     timeout-minutes: 15
     steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: gc-go-web
       - name: Configure SSH
         env:
           DEPLOY_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -102,10 +104,16 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
           COMMIT_SHA: ${{ needs.publish.outputs.commit_sha }}
         run: |
+          scp \
+            -i "$HOME/.ssh/deploy_key" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            gc-go-web.tar.gz \
+            "$VPS_USER@$VPS_HOST:/tmp/gc-go-web-$COMMIT_SHA.tar.gz"
           printf '%s' "$GHCR_TOKEN" |
             ssh \
               -i "$HOME/.ssh/deploy_key" \
               -o BatchMode=yes \
               -o IdentitiesOnly=yes \
               "$VPS_USER@$VPS_HOST" \
-              "/home/nmfairus/gc-go/deploy/deploy.sh '$COMMIT_SHA' '${{ github.actor }}'"
+              "/home/nmfairus/gc-go/deploy/deploy.sh '$COMMIT_SHA' '${{ github.actor }}' '/tmp/gc-go-web-$COMMIT_SHA.tar.gz'"

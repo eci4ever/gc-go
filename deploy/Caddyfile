@@ -1,0 +1,37 @@
+{
+	email admin@nimfi.dev
+}
+
+vms.nimfi.dev {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	handle {
+		root * /var/www/gc-go/current
+		try_files {path} /index.html
+
+		header /assets/* Cache-Control "public, max-age=31536000, immutable"
+
+		file_server
+	}
+}
+
+vms2.nimfi.dev {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy 127.0.0.1:3001
+	}
+
+	handle {
+		root * /var/www/gc-hono/current
+		try_files {path} /index.html
+
+		header /assets/* Cache-Control "public, max-age=31536000, immutable"
+
+		file_server
+	}
+}
