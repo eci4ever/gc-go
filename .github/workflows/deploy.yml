@@ -42,7 +42,7 @@ jobs:
         working-directory: api
       - name: Package web build
         run: tar -C web/dist -czf gc-go-web.tar.gz .
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: gc-go-web
           path: gc-go-web.tar.gz
@@ -84,7 +84,7 @@ jobs:
     environment: production
     timeout-minutes: 15
     steps:
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v7
         with:
           name: gc-go-web
       - name: Configure SSH
